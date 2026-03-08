@@ -4,10 +4,11 @@ LDFLAGS := -ltag -lfftw3 -lebur128 -lsndfile -lavformat -lavcodec -lswresample -
 BUILD_DIR := build
 
 SRC := main.cpp helperfunctions.cpp filechecks.cpp globals.cpp nonusrfunctions.cpp coreoperations.cpp
+FORMAT_FILES := $(SRC) Utilites/*.hpp
 OBJ := $(addprefix $(BUILD_DIR)/,$(SRC:.cpp=.o))
 BIN := bitf
 
-.PHONY: all clean
+.PHONY: all clean format check-format
 
 all: $(BIN)
 
@@ -23,3 +24,9 @@ $(BUILD_DIR)/%.o: %.cpp | $(BUILD_DIR)
 
 clean:
 	rm -f $(OBJ) $(BIN) $(BUILD_DIR)/bitf
+
+format:
+	clang-format -i $(FORMAT_FILES)
+
+check-format:
+	clang-format --dry-run -Werror $(FORMAT_FILES)
