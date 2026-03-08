@@ -18,9 +18,7 @@ namespace gb = globals;
 #include <taglib/tag.h>
 namespace tl = TagLib;
 
-
-int main(int argc, char* argv[])
-{
+int main(int argc, char *argv[]) {
     if (argc < 2) {
         err("No arguments provided! I can't do anything :(");
         plog("psst... use --help for more info!");
@@ -29,118 +27,117 @@ int main(int argc, char* argv[])
 
     // First Pass grabs input file(s) and output file (if specified)
     for (int i = 1; i < argc; i++) {
-        switch (argv[i][0]) 
-        {     
-            case '-':
-                if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) 
-                {
-                    printf("Usage: ./bitfake2 [options]\n");
-                    printf("Options:\n");
-                    printf("  -h, --help\t\t\t Show this help message\n");
-                    printf("  -i, --input <path>\t\t Input audio file or directory path\n");
-                    printf("  -o, --output <file>\t\t Output file path (must be .txt)\n");
-                    printf("  -po, --pathout <directory>\t Output directory path for conversion functions\n");
-                    printf("  -t, --tag <tag:val>\t\t Tag to apply to input file (e.g. -t title:NewTitle, -t REPLAY_GAIN_TRACK_GAIN:-12.35)\n");
-                    printf("  -f, --format <fmt[:q]>\t Conversion type (e.g. mp3:V0, flac:L8, wav)\n");
-                    printf("  -gmd, --getmetadata\t\t Get metadata of input file\n");
-                    printf("  -grg, --getreplaygain\t\t Get ReplayGain information of input file\n");
-                    printf("  -sa, --spectralanalysis\t Perform spectral analysis on input file\n");
-                    printf("  -atrg, --applytrackreplaygain\t Calculate track replaygain and apply it to the file(s) (album gain will be left empty)\n");
-                    printf("  -arg, --applyalbumreplaygain\t Calculate album replaygain and apply it to the file(s) (track gain will be left empty)\n");
-                    printf("  -v, --version\t\t\t Show program version\n");
-                    return EXIT_SUCCESS;
-                }
+        switch (argv[i][0]) {
+        case '-':
+            if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+                printf("Usage: ./bitfake2 [options]\n");
+                printf("Options:\n");
+                printf("  -h, --help\t\t\t Show this help message\n");
+                printf("  -i, --input <path>\t\t Input audio file or directory path\n");
+                printf("  -o, --output <file>\t\t Output file path (must be .txt)\n");
+                printf("  -po, --pathout <directory>\t Output directory path for conversion functions\n");
+                printf("  -t, --tag <tag:val>\t\t Tag to apply to input file (e.g. -t title:NewTitle, -t "
+                       "REPLAY_GAIN_TRACK_GAIN:-12.35)\n");
+                printf("  -f, --format <fmt[:q]>\t Conversion type (e.g. mp3:V0, flac:L8, wav)\n");
+                printf("  -gmd, --getmetadata\t\t Get metadata of input file\n");
+                printf("  -grg, --getreplaygain\t\t Get ReplayGain information of input file\n");
+                printf("  -sa, --spectralanalysis\t Perform spectral analysis on input file\n");
+                printf("  -atrg, --applytrackreplaygain\t Calculate track replaygain and apply it to the file(s) "
+                       "(album gain will be left empty)\n");
+                printf("  -arg, --applyalbumreplaygain\t Calculate album replaygain and apply it to the file(s) (track "
+                       "gain will be left empty)\n");
+                printf("  -v, --version\t\t\t Show program version\n");
+                return EXIT_SUCCESS;
+            }
 
-                if (strcmp(argv[i], "--input") == 0 || strcmp(argv[i], "-i") == 0) 
-                {
-                    if (i + 1 < argc) {
-                        plog("Input file specified in flag: ");
-                        yay(argv[i + 1]);
-                        gb::inputFile = argv[i + 1];
-                        i++; // Skip the next argument since it's the input file
+            if (strcmp(argv[i], "--input") == 0 || strcmp(argv[i], "-i") == 0) {
+                if (i + 1 < argc) {
+                    plog("Input file specified in flag: ");
+                    yay(argv[i + 1]);
+                    gb::inputFile = argv[i + 1];
+                    i++; // Skip the next argument since it's the input file
+                } else {
+                    err("Input flag provided but no input file specified!");
+                    return EXIT_FAILURE;
+                }
+            }
+
+            if (strcmp(argv[i], "--output") == 0 || strcmp(argv[i], "-o") == 0) {
+                if (i + 1 < argc) {
+                    plog("Output path specified in flag: ");
+                    yay(argv[i + 1]);
+                    gb::outputFile = argv[i + 1];
+                    i++; // Skip the next argument since it's the output file
+                } else {
+                    err("Output flag provided but no output file specified!");
+                    return EXIT_FAILURE;
+                }
+            }
+
+            if (strcmp(argv[i], "--format") == 0 || strcmp(argv[i], "-f") == 0) {
+                if (i + 1 < argc) {
+                    std::string formatStr = argv[i + 1];
+                    size_t colonPos = formatStr.find(':');
+                    if (colonPos != std::string::npos) {
+                        std::string qualityStr = formatStr.substr(colonPos + 1);
+                        formatStr = formatStr.substr(0, colonPos);
+                        gb::outputFormat = op::StringToAudioFormat(formatStr);
+                        gb::VBRQuality = op::StringToVBRQuality(qualityStr);
                     } else {
-                        err("Input flag provided but no input file specified!");
+                        gb::outputFormat = op::StringToAudioFormat(formatStr);
+                    }
+                    // printf("format=%d quality=%d\n", static_cast<int>(gb::outputFormat),
+                    // static_cast<int>(gb::VBRQuality));
+                    i++; // Skip the next argument since it's the format
+                } else {
+                    err("Format flag provided but no format specified!");
+                    warn("To use: -f/--format <format>:<quality> (e.g. -f mp3:V0, -f ogg:Q6, -f flac:L8)");
+                    return EXIT_FAILURE;
+                }
+            }
+
+            if (strcmp(argv[i], "--tag") == 0 || strcmp(argv[i], "-t") == 0) {
+                if (i + 1 < argc) {
+                    std::string tagStr = argv[i + 1];
+                    size_t colonPos = tagStr.find(':');
+                    if (colonPos != std::string::npos) {
+                        std::string taggedValue = tagStr.substr(colonPos + 1);
+                        tagStr = tagStr.substr(0, colonPos);
+                        gb::tag = tagStr;
+                        gb::val = taggedValue;
+                        plog("Tag specified in flag: ");
+                        warn("Hey! This is a testing feature, you CAN technically use it, but I recommened use the "
+                             "Picard GUI as its much easier. :^)");
+                        yay((gb::tag + ":" + gb::val).c_str());
+                    } else {
+                        err("Tag flag provided but no tag value specified :^(");
+                        warn("pssst!! Use me like this: -t/--tag <tag:val> (e.g. -t title:NewTitle, -t "
+                             "REPLAY_GAIN_TRACK_GAIN:-12.35)");
+                        warn("Hey! This is a testing feature, you CAN technically use it, but I recommened use the "
+                             "Picard GUI as its much easier. :^)");
                         return EXIT_FAILURE;
                     }
+                    i++; // Skip the next argument since it's the tag value
                 }
+            }
 
-                if (strcmp(argv[i], "--output") == 0 || strcmp(argv[i], "-o") == 0) 
-                {
-                    if (i + 1 < argc) {
-                        plog("Output path specified in flag: ");
-                        yay(argv[i + 1]);
-                        gb::outputFile = argv[i + 1];
-                        i++; // Skip the next argument since it's the output file
-                    } else {
-                        err("Output flag provided but no output file specified!");
-                        return EXIT_FAILURE;
-                    }
+            if (strcmp(argv[i], "--pathout") == 0 || strcmp(argv[i], "-po") == 0) {
+                if (i + 1 < argc) {
+                    plog("Conversion output directory specified in flag: ");
+                    yay(argv[i + 1]);
+                    gb::conversionOutputDirectory = argv[i + 1];
+                    i++; // Skip the next argument since it's the output directory
                 }
+            }
 
-                if (strcmp(argv[i], "--format") == 0 || strcmp(argv[i], "-f") == 0) 
-                {
-                    if (i + 1 < argc) {
-                        std::string formatStr = argv[i + 1];
-                        size_t colonPos = formatStr.find(':');
-                        if (colonPos != std::string::npos) {
-                            std::string qualityStr = formatStr.substr(colonPos + 1);
-                            formatStr = formatStr.substr(0, colonPos);
-                            gb::outputFormat = op::StringToAudioFormat(formatStr);
-                            gb::VBRQuality = op::StringToVBRQuality(qualityStr);
-                        } else {
-                            gb::outputFormat = op::StringToAudioFormat(formatStr);
-                        }
-                        // printf("format=%d quality=%d\n", static_cast<int>(gb::outputFormat), static_cast<int>(gb::VBRQuality));
-                        i++; // Skip the next argument since it's the format
-                    } else {
-                        err("Format flag provided but no format specified!");
-                        warn("To use: -f/--format <format>:<quality> (e.g. -f mp3:V0, -f ogg:Q6, -f flac:L8)");
-                        return EXIT_FAILURE;
-                    }
-                }
+            if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
+                printf("bitfake ver %s\n", gb::version.c_str());
+                printf("ty for using my cli <3, enjoy :D\n");
+                return EXIT_SUCCESS;
+            }
 
-                if (strcmp(argv[i], "--tag") == 0 || strcmp(argv[i], "-t") == 0)
-                {
-                    if (i + 1 < argc) {
-                        std::string tagStr = argv[i + 1];
-                        size_t colonPos = tagStr.find(':');
-                        if (colonPos != std::string::npos) {
-                            std::string taggedValue = tagStr.substr(colonPos + 1);
-                            tagStr = tagStr.substr(0, colonPos);
-                            gb::tag = tagStr;
-                            gb::val = taggedValue;
-                            plog("Tag specified in flag: ");
-                            warn("Hey! This is a testing feature, you CAN technically use it, but I recommened use the Picard GUI as its much easier. :^)");
-                            yay((gb::tag + ":" + gb::val).c_str());
-                        } else {
-                            err("Tag flag provided but no tag value specified :^(");
-                            warn("pssst!! Use me like this: -t/--tag <tag:val> (e.g. -t title:NewTitle, -t REPLAY_GAIN_TRACK_GAIN:-12.35)");
-                            warn("Hey! This is a testing feature, you CAN technically use it, but I recommened use the Picard GUI as its much easier. :^)");
-                            return EXIT_FAILURE;
-                        }
-                        i++; // Skip the next argument since it's the tag value
-                    }
-                }
-
-                if (strcmp(argv[i], "--pathout") == 0 || strcmp(argv[i], "-po") == 0) 
-                {
-                    if (i + 1 < argc) {
-                        plog("Conversion output directory specified in flag: ");
-                        yay(argv[i + 1]);
-                        gb::conversionOutputDirectory = argv[i + 1];
-                        i++; // Skip the next argument since it's the output directory
-                    }
-                }
-
-                if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) 
-                {
-                    printf("bitfake ver %s\n", gb::version.c_str());
-                    printf("ty for using my cli <3, enjoy :D\n");
-                    return EXIT_SUCCESS;
-                }
-
-                // This first pass is only for grabbing input and output files, so we can apply it to other commands later!
-                break;
+            // This first pass is only for grabbing input and output files, so we can apply it to other commands later!
+            break;
         }
     }
 
@@ -148,29 +145,27 @@ int main(int argc, char* argv[])
     int fmt = static_cast<int>(gb::outputFormat);
     int q = static_cast<int>(gb::VBRQuality);
 
-
     // To the brave souls reading this code:
     // if (fmt == 0 && (q < 0 || q > 9)) { /* MP3: V0..V9 */ }
     // if (fmt == 1 && (q < 10 || q > 14)) { /* OGG: Q0..Q10 */ }
     // if (fmt == 4 && (q < 15 || q > 23)) { /* FLAC: L0..L8 */ }
 
-    if (fmt == 0 && (q < 0 || q > 9))
-    {
+    if (fmt == 0 && (q < 0 || q > 9)) {
         err("MP3 format requires a VBR quality between V0 and V9 (inclusive)! (Do not use Qx or Lx for MP3! :( )");
         printf("format=%d quality=%d\n", static_cast<int>(gb::outputFormat), static_cast<int>(gb::VBRQuality));
         return EXIT_FAILURE;
     }
 
-    if (fmt == 1 && (q < 0 || q > 10))
-    {
-        err("OGG VORBIS format requires a VBR quality between Q0 and Q10 (inclusive)! (Do not use Vx or Lx for OGG! :( )");
+    if (fmt == 1 && (q < 0 || q > 10)) {
+        err("OGG VORBIS format requires a VBR quality between Q0 and Q10 (inclusive)! (Do not use Vx or Lx for OGG! :( "
+            ")");
         printf("format=%d quality=%d\n", static_cast<int>(gb::outputFormat), static_cast<int>(gb::VBRQuality));
         return EXIT_FAILURE;
     }
 
-    if (fmt == 4 && (q < 0 || q > 8))
-    {
-        err("FLAC format requires an encoding level between L0 and L8 (inclusive)! (Do not use Vx or Qx for FLAC! :( )");
+    if (fmt == 4 && (q < 0 || q > 8)) {
+        err("FLAC format requires an encoding level between L0 and L8 (inclusive)! (Do not use Vx or Qx for FLAC! :( "
+            ")");
         printf("format=%d quality=%d\n", static_cast<int>(gb::outputFormat), static_cast<int>(gb::VBRQuality));
         return EXIT_FAILURE;
     }
@@ -179,45 +174,33 @@ int main(int argc, char* argv[])
     // negate pathout checks since it can be used for other functions that don't require an output file
     // allow the program to continue forward without a specified po
 
-    if (gb::outputFile.empty())
-    {
+    if (gb::outputFile.empty()) {
         plog("No output file specified. Output will be sent to terminal.");
         gb::outputToTerminal = true;
-    }
-    else if (gb::outputFile.extension() != ".txt")
-    {
+    } else if (gb::outputFile.extension() != ".txt") {
         warn("Output file must have .txt extension! Output will be sent to terminal instead.");
         gb::outputToTerminal = true;
-    }
-    else if (!fc::ParentExists(gb::outputFile))
-    {
+    } else if (!fc::ParentExists(gb::outputFile)) {
         err("Output file parent directory does not exist!");
         return EXIT_FAILURE;
-    }
-    else
-    {
+    } else {
         plog("Output file will be created/written to: ");
         yay(gb::outputFile.c_str());
         gb::outputToTerminal = false;
     }
-    
 
-    if (!fs::exists(gb::inputFile))
-    {
+    if (!fs::exists(gb::inputFile)) {
         err("Input file does not exist or is not a valid audio file!");
         err("Try again :(");
         return EXIT_FAILURE;
     }
-    
+
     // 2nd pass
 
-    for (int j = 1; j < argc; j++)
-    {
-         if (strcmp(argv[j], "-gmd") == 0 || strcmp(argv[j], "--getmetadata") == 0)
-         {
+    for (int j = 1; j < argc; j++) {
+        if (strcmp(argv[j], "-gmd") == 0 || strcmp(argv[j], "--getmetadata") == 0) {
             std::vector<op::AudioMetadataResult> results = op::GetMetaDataList(gb::inputFile);
-            if (results.empty())
-            {
+            if (results.empty()) {
                 err("No metadata found for input path.");
                 return EXIT_FAILURE;
             }
@@ -225,8 +208,7 @@ int main(int argc, char* argv[])
             plog("Metadata for input file(s): ");
 
             if (gb::outputToTerminal) {
-                for (const auto& result : results)
-                {
+                for (const auto &result : results) {
                     printf("----------------------\n");
                     printf("Track #%d: %s\n", result.metadata.trackNumber, result.metadata.title.c_str());
                     printf("Artist: %s\n", result.metadata.artist.c_str());
@@ -235,13 +217,12 @@ int main(int argc, char* argv[])
                     printf("Year: %s\n", result.metadata.date.c_str());
                 }
             } else {
-                FILE* outFile = fopen(gb::outputFile.string().c_str(), "w");
+                FILE *outFile = fopen(gb::outputFile.string().c_str(), "w");
                 if (!outFile) {
                     err("Failed to open output file for writing.");
                     return EXIT_FAILURE;
                 }
-                for (const auto& result : results)
-                {
+                for (const auto &result : results) {
                     fprintf(outFile, "----------------------\n");
                     fprintf(outFile, "Track #%d: %s\n", result.metadata.trackNumber, result.metadata.title.c_str());
                     fprintf(outFile, "Artist: %s\n", result.metadata.artist.c_str());
@@ -254,11 +235,9 @@ int main(int argc, char* argv[])
             }
         }
 
-        if (strcmp(argv[j], "-grg") == 0 || strcmp(argv[j], "--getreplaygain") == 0)
-        {
+        if (strcmp(argv[j], "-grg") == 0 || strcmp(argv[j], "--getreplaygain") == 0) {
             std::vector<op::ReplayGainResult> results = op::GetReplayGainList(gb::inputFile);
-            if (results.empty())
-            {
+            if (results.empty()) {
                 err("No ReplayGain information found for input path.");
                 return EXIT_FAILURE;
             }
@@ -266,8 +245,7 @@ int main(int argc, char* argv[])
             plog("ReplayGain information for input file(s): ");
 
             if (gb::outputToTerminal) {
-                for (const auto& result : results)
-                {
+                for (const auto &result : results) {
                     printf("----------------------\n");
                     printf("Track #%d: %s\n", result.info.trackNumber, result.info.title.c_str());
                     printf("Track Gain: %f\n", result.info.trackGain);
@@ -276,13 +254,12 @@ int main(int argc, char* argv[])
                     printf("Album Peak: %f\n", result.info.albumPeak);
                 }
             } else {
-                FILE* outFile = fopen(gb::outputFile.string().c_str(), "w");
+                FILE *outFile = fopen(gb::outputFile.string().c_str(), "w");
                 if (!outFile) {
                     err("Failed to open output file for writing.");
                     return EXIT_FAILURE;
                 }
-                for (const auto& result : results)
-                {
+                for (const auto &result : results) {
                     fprintf(outFile, "----------------------\n");
                     fprintf(outFile, "Track #%d: %s\n", result.info.trackNumber, result.info.title.c_str());
                     fprintf(outFile, "Track Gain: %f\n", result.info.trackGain);
@@ -293,16 +270,12 @@ int main(int argc, char* argv[])
                 fclose(outFile);
                 yay("ReplayGain information written to output file successfully.");
             }
-
-            
         }
 
-        if (strcmp(argv[j], "-sa") == 0 || strcmp(argv[j], "--spectralanalysis") == 0)
-        {
+        if (strcmp(argv[j], "-sa") == 0 || strcmp(argv[j], "--spectralanalysis") == 0) {
             std::vector<op::SpectralAnalysisResult> results = op::SpectralAnalysisList(gb::inputFile);
             warn("If a song's bitrate is >44.1kHz, results may be inaccurate due to the limitations of my SKILLs.");
-            if (results.empty())
-            {
+            if (results.empty()) {
                 err("No spectral analysis results found for input path.");
                 return EXIT_FAILURE;
             }
@@ -310,8 +283,7 @@ int main(int argc, char* argv[])
             plog("Spectral Analysis Result for input file(s): ");
 
             if (gb::outputToTerminal) {
-                for (const auto& result : results)
-                {
+                for (const auto &result : results) {
                     printf("----------------------\n");
                     printf("Title: %s\n", result.title.c_str());
                     printf("Artist: %s\n", result.artist.c_str());
@@ -323,13 +295,12 @@ int main(int argc, char* argv[])
                     printf("Banding Score: %.2f\n", result.bandingScore);
                 }
             } else {
-                FILE* outFile = fopen(gb::outputFile.string().c_str(), "w");
+                FILE *outFile = fopen(gb::outputFile.string().c_str(), "w");
                 if (!outFile) {
                     err("Failed to open output file for writing.");
                     return EXIT_FAILURE;
                 }
-                for (const auto& result : results)
-                {
+                for (const auto &result : results) {
                     fprintf(outFile, "----------------------\n");
                     fprintf(outFile, "Title: %s\n", result.title.c_str());
                     fprintf(outFile, "Artist: %s\n", result.artist.c_str());
@@ -345,8 +316,7 @@ int main(int argc, char* argv[])
             }
         }
 
-        if (strcmp(argv[j], "-cvrt") == 0 || strcmp(argv[j], "--convert") == 0)
-        {
+        if (strcmp(argv[j], "-cvrt") == 0 || strcmp(argv[j], "--convert") == 0) {
             // first check for po
             if (gb::conversionOutputDirectory.empty()) {
                 err("When specifying -cvrt, you must input a valid output directory after a -po / --pathout flag");
@@ -354,7 +324,8 @@ int main(int argc, char* argv[])
             }
             // Check other parts of the po now
             if (!fs::exists(gb::conversionOutputDirectory) || !fs::is_directory(gb::conversionOutputDirectory)) {
-                err("When specifying an output directory after -po / --pathout flag, ensure the path\n is a exists and is a directory!");
+                err("When specifying an output directory after -po / --pathout flag, ensure the path\n is a exists and "
+                    "is a directory!");
                 return EXIT_FAILURE;
             }
 
@@ -362,8 +333,7 @@ int main(int argc, char* argv[])
             op::ConvertToFileType(gb::inputFile, gb::conversionOutputDirectory, gb::outputFormat, gb::VBRQuality);
         }
 
-        if (strcmp(argv[j], "-t") == 0 || strcmp(argv[j], "--tag") == 0)
-        {
+        if (strcmp(argv[j], "-t") == 0 || strcmp(argv[j], "--tag") == 0) {
             tl::FileRef f(gb::inputFile.c_str());
             if (f.isNull() || !f.tag()) {
                 err("Failed to open file for metadata commit");
@@ -375,11 +345,10 @@ int main(int argc, char* argv[])
             yay("Tag applied successfully!");
         }
 
-        if (strcmp(argv[j], "-atrg") == 0 || strcmp(argv[j], "--applytrackreplaygain") == 0)
-        {
+        if (strcmp(argv[j], "-atrg") == 0 || strcmp(argv[j], "--applytrackreplaygain") == 0) {
             if (fs::is_directory(gb::inputFile)) {
                 std::vector<fs::path> tracks;
-                for (const auto& entry : fs::directory_iterator(gb::inputFile)) {
+                for (const auto &entry : fs::directory_iterator(gb::inputFile)) {
                     if (!entry.is_regular_file()) {
                         continue;
                     }
@@ -393,7 +362,8 @@ int main(int argc, char* argv[])
                     warn("No valid audio files found in directory for track replaygain application.");
                 } else {
                     const unsigned int hardwareThreads = std::thread::hardware_concurrency();
-                    const std::size_t desiredWorkers = std::max<std::size_t>(1, static_cast<std::size_t>(hardwareThreads / 2));
+                    const std::size_t desiredWorkers =
+                        std::max<std::size_t>(1, static_cast<std::size_t>(hardwareThreads / 2));
                     const std::size_t workerCount = std::min<std::size_t>(desiredWorkers, tracks.size());
                     std::vector<op::ReplayGainByTrack> trackResults(tracks.size(), op::ReplayGainByTrack{0.0f, 0.0f});
                     std::atomic<std::size_t> nextIndex{0};
@@ -412,7 +382,7 @@ int main(int argc, char* argv[])
                         }));
                     }
 
-                    for (auto& worker : workers) {
+                    for (auto &worker : workers) {
                         worker.get();
                     }
 
@@ -421,7 +391,8 @@ int main(int argc, char* argv[])
                         op::ApplyReplayGain(tracks[i], trackResults[i], albumGainInfo);
                     }
 
-                    yay(("Track ReplayGain applied successfully to " + std::to_string(tracks.size()) + " file(s)!").c_str());
+                    yay(("Track ReplayGain applied successfully to " + std::to_string(tracks.size()) + " file(s)!")
+                            .c_str());
                 }
             } else {
                 op::ReplayGainByTrack trackGainInfo = op::CalculateReplayGainTrack(gb::inputFile);
@@ -431,12 +402,10 @@ int main(int argc, char* argv[])
             }
         }
 
-        if (strcmp(argv[j], "-aag") == 0 || strcmp(argv[j], "--applyalbumgain") == 0)
-        {
+        if (strcmp(argv[j], "-aag") == 0 || strcmp(argv[j], "--applyalbumgain") == 0) {
             op::CalculateReplayGainAlbum(gb::inputFile);
             yay("Album ReplayGain applied successfully!");
         }
-    
     }
 
     return 0;
