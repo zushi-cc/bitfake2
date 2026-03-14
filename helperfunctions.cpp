@@ -106,8 +106,8 @@ AudioMetadata GetMetaData(const fs::path &path) {
 std::vector<AudioMetadataResult> GetMetaDataList(const fs::path &path) {
     std::vector<AudioMetadataResult> results;
 
-    if (!fs::exists(path) || !fc::IsValidAudioFile(path)) {
-        warn("Metadata list failed: input path does not exist or is not a valid audio file.");
+    if (!fs::exists(path)) {
+        warn("Metadata list failed: input path does not exist");
         return results;
     }
 
