@@ -1844,6 +1844,7 @@ void GenerateSpectrogram(const fs::path &inputPath, const fs::path &outputImageP
     fftw_complex* fftOut = fftw_alloc_complex(static_cast<std::size_t>(numBins));
     fftw_plan plan = fftw_plan_dft_r2c_1d(FFT_SIZE, fftIn.data(), fftOut, FFTW_ESTIMATE);
 if (!plan) {
+        fftw_free(fftOut);
         err("Failed to allocate FFT plan for spectrogram generation.");
         return;
     }
