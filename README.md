@@ -145,6 +145,8 @@ sudo make -f BSD.make install
 ```
 
 DragonFly BSD:
+> [!NOTE]
+> Untested, but should work the same as FreeBSD.
 
 Clone the bitfake2 repo:
 ```sh
