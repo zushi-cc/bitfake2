@@ -135,8 +135,16 @@ Then add to your system packages:
 environment.systemPackages = [ inputs.bitfake2.packages.${pkgs.system}.default ];
 ```
 FreeBSD:
-[stub]...
 
+> [!WARNING]
+> `ebur128` conflicts with `libebur128`.
+```sh
+sudo pkg install taglib fftw3 libebur128 libsndfile ffmpeg
+```
+Once you have installed the deps:
+```sh
+make -f FreeBSD.mk
+```
 2. Clone the project and compile
 
 Using `git clone`:
