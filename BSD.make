@@ -4,6 +4,7 @@ OS!= uname
 
 .if $(OS) == "NetBSD"
 LOCALBASE?= /usr/pkg
+# NetBSD uses g++ because it works on ALL platforms NetBSD supports (also it does NOT USE the gnu-gcc it uses is own netbsd-gcc)
 CXX= g++
 .  if exists($(LOCALBASE)/include/ffmpeg8)
 CXXFLAGS += -I$(LOCALBASE)/include/ffmpeg8
