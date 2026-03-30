@@ -140,8 +140,8 @@ sudo pkg install taglib fftw3 libebur128 libsndfile ffmpeg
 ```
 Once you have installed the deps:
 ```sh
-make -f BSDmakefile
-sudo make -f BSDmakefile install
+bmake
+sudo bmake install
 ```
 
 DragonFly BSD:
@@ -156,8 +156,8 @@ git clone https://github.com/Ray17x/bitfake2
 sudo pkg install taglib fftw3 libebur128 libsndfile ffmpeg
 ```
 ```sh
-make -f BSDmakefile
-sudo make -f BSDmakefile install
+bmake 
+sudo bmake install
 ```
 
 NetBSD:
@@ -169,12 +169,12 @@ git clone https://github.com/Ray17x/bitfake2
 
 Install the dependencies:
 ```sh
-pkgin install taglib fftw3 libebur128 libsndfile ffmpeg7
+sudo pkgin install taglib fftw3 libebur128 libsndfile ffmpeg7
 ```
 Compile and install:
 ```sh
-make -f BSDmakefile
-make -f BSDmakefile install
+bmake 
+sudo bmake install
 ```
 
 OpenBSD:
@@ -190,8 +190,8 @@ pkg_add taglib fftw3 libebur128 libsndfile ffmpeg
 ```
 Compile and install:
 ```sh
-make -f BSDmakefile
-make -f BSDmakefile install
+bmake
+bmake install
 ```
 
 Overall dependency list (for other distros):
