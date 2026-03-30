@@ -141,7 +141,7 @@ sudo pkg install taglib fftw3 libebur128 libsndfile ffmpeg
 Once you have installed the deps:
 ```sh
 make -f BSD.make
-sudo make -f BSD.make install
+sudo make -f BSDmakefile install
 ```
 
 DragonFly BSD:
@@ -157,7 +157,7 @@ sudo pkg install taglib fftw3 libebur128 libsndfile ffmpeg
 ```
 ```sh
 make -f BSD.make
-sudo make -f BSD.make install
+sudo make -f BSDmakefile install
 ```
 
 NetBSD:
@@ -173,8 +173,8 @@ pkgin install taglib fftw3 libebur128 libsndfile ffmpeg7
 ```
 Compile and install:
 ```sh
-make -f BSD.make
-make -f BSD.make install
+make -f BSDmakefile
+make -f BSDmakefile install
 ```
 
 OpenBSD:
@@ -190,8 +190,8 @@ pkg_add taglib fftw3 libebur128 libsndfile ffmpeg
 ```
 Compile and install:
 ```sh
-make -f BSD.make
-make -f BSD.make install
+make -f BSDmakefile
+make -f BSDmakefile install
 ```
 
 Overall dependency list (for other distros):
