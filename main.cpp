@@ -520,8 +520,7 @@ int main(int argc, char *argv[]) {
             }
             op::RenameAlbumDirectoriesFromTags(gb::inputFile);
         }
-
-        if (strcmp(argv[j], "-sg") == 0 || strcmp(argv[j], "--generatespectrogram") == 0) {
+        if (strcmp(argv[j], "-sg") == 0 || strcmp(argv[j], "--spectrogram") == 0 || strcmp(argv[j], "--generatespectrogram") == 0) {
             if (fs::is_directory(gb::inputFile)) {
                 err("Generate spectrogram requires a single audio file as input! Use -i <file>");
                 return EXIT_FAILURE;
