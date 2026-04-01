@@ -10,7 +10,7 @@
 
 stdenv.mkDerivation {
   pname = "bitfake2";
-  version = "1.8";
+  version = "0.1.8";
 
   src = lib.cleanSource ./.;
 
