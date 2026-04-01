@@ -1,18 +1,15 @@
 {
-  inputs.nixpkgs.url = "git+https://github.com/NixOS/nixpkgs?ref=nixpkgs-unstable";
-  inputs.sprinkles.url = "git+https://codeberg.org/poacher/sprinkles";
-
-  outputs = {
-    self,
-    nixpkgs,
-    sprinkles,
-    ...
-  }: let
-    forAllSystems = nixpkgs.lib.genAttrs ["x86_64-linux" "aarch64-linux"];
-  in {
-    packages = forAllSystems (system:
-      (import ./. {inherit sprinkles;}).packages);
-    devShells = forAllSystems (system:
-      (import ./. {inherit sprinkles;}).shells);
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  outputs = { self, nixpkgs }: {
+    packages.x86_64-linux.default = (nixpkgs.legacyPackages.x86_64-linux.callPackage ./package.nix {}).overrideAttrs { src = self; };
+    packages.aarch64-linux.default = (nixpkgs.legacyPackages.aarch64-linux.callPackage ./package.nix {}).overrideAttrs { src = self; };
+    devShells.x86_64-linux.default = nixpkgs.legacyPackages.x86_64-linux.mkShell {
+      inputsFrom = [ self.packages.x86_64-linux.default ];
+      packages = [ nixpkgs.legacyPackages.x86_64-linux.clang-tools ];
+    };
+    devShells.aarch64-linux.default = nixpkgs.legacyPackages.aarch64-linux.mkShell {
+      inputsFrom = [ self.packages.aarch64-linux.default ];
+      packages = [ nixpkgs.legacyPackages.aarch64-linux.clang-tools ];
+    };
   };
 }
