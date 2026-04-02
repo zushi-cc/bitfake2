@@ -8,8 +8,6 @@ using namespace ConsoleOut;
 #include <cstring>
 namespace fs = std::filesystem;
 
-
-
 namespace FileChecks {
 
 // Defined (Valid) Audio Extensions list:

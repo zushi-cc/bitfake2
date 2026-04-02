@@ -1,5 +1,23 @@
+
+# Ignore build artifacts and IDE settings
 /build/*
 /.vscode/*
+
+# Ignore log files and core dumps
 *.log
 *.core
+
+# Ignore binary
 bitf
+
+# Ignore MusicFiles
+
+*.flac
+*.ogg
+*.opus
+*.mp3
+*.wav
+*.m4a
+*.alac
+*.aac
+

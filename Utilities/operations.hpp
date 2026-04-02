@@ -12,10 +12,9 @@
 #include <taglib/tpropertymap.h>
 namespace fs = std::filesystem;
 
-
 namespace bitfake {
 namespace type {
-    enum class AudioFormat {
+enum class AudioFormat {
     MP3,
     OGG,
     M4A,
@@ -53,7 +52,7 @@ namespace type {
     // General used for things we don't need a specfic format for
 };
 
-    enum class VBRQualities : int {
+enum class VBRQualities : int {
     V0 = 0,
     V1 = 1,
     V2 = 2,
@@ -172,61 +171,64 @@ inline const std::map<AudioFormat, std::string> ConversionLibMap = {
     {AudioFormat::MP3, "libmp3lame"},    {AudioFormat::OGG, "libvorbis"}, {AudioFormat::FLAC, "flac"},
     {AudioFormat::AAC, "libfdk-aac"},    {AudioFormat::OPUS, "libopus"},  {AudioFormat::WAV, "pcm_s16le"},
     {AudioFormat::GENERAL, "libavcodec"}};
-}
+} // namespace type
 
 namespace nonuser {
-    type::AudioFormat StringToAudioFormat(const std::string &str);
-    type::VBRQualities StringToVBRQuality(const std::string &str);
-    bool ConvertToFileType(const fs::path &inputPath, const fs::path &outputPath, type::AudioFormat format, type::VBRQualities quality);
-}
+type::AudioFormat StringToAudioFormat(const std::string &str);
+type::VBRQualities StringToVBRQuality(const std::string &str);
+bool ConvertToFileType(const fs::path &inputPath, const fs::path &outputPath, type::AudioFormat format,
+                       type::VBRQualities quality);
+} // namespace nonuser
 
 namespace tagging {
-    void StageMetaDataChanges(TagLib::PropertyMap &drawer, std::string key, const std::string &value);
-    bool CommitMetaDataChanges(const std::filesystem::path &path, const TagLib::PropertyMap &drawer);
-    void MassTagDirectory(const fs::path &dirPath, const std::string &tag, const std::string &value);
-}
+void StageMetaDataChanges(TagLib::PropertyMap &drawer, std::string key, const std::string &value);
+bool CommitMetaDataChanges(const std::filesystem::path &path, const TagLib::PropertyMap &drawer);
+void MassTagDirectory(const fs::path &dirPath, const std::string &tag, const std::string &value);
+} // namespace tagging
 
 namespace extract {
-    type::AudioMetadata GetMetaData(const fs::path &path);
-    std::vector<type::AudioMetadataResult> GetMetaDataList(const fs::path &path);
-    type::ReplayGainInfo GetReplayGain(const fs::path &path);
-    std::vector<type::ReplayGainResult> GetReplayGainList(const fs::path &path);
-}
+type::AudioMetadata GetMetaData(const fs::path &path);
+std::vector<type::AudioMetadataResult> GetMetaDataList(const fs::path &path);
+type::ReplayGainInfo GetReplayGain(const fs::path &path);
+std::vector<type::ReplayGainResult> GetReplayGainList(const fs::path &path);
+} // namespace extract
 
 namespace spectral {
-    type::SpectralAnalysisResult SpectralAnalysis(const fs::path &path);
-    std::vector<type::SpectralAnalysisResult> SpectralAnalysisList(const fs::path &path);
-    void GenerateSpectrogram(const fs::path &inputPath, const fs::path &outputImagePath);
-}
+type::SpectralAnalysisResult SpectralAnalysis(const fs::path &path);
+std::vector<type::SpectralAnalysisResult> SpectralAnalysisList(const fs::path &path);
+void GenerateSpectrogram(const fs::path &inputPath, const fs::path &outputImagePath);
+} // namespace spectral
 
 namespace coverart {
-    bool InputHasAttachedCover(const fs::path &inputPath);
-    bool GetAttachedCover(const fs::path &inputPath, type::AttachedCoverArt &coverArt);
-    bool WriteAttachedCover(const fs::path &outputPath, type::AudioFormat outputFormat, const type::AttachedCoverArt &coverArt);
-    bool CopyAttachedCover(const fs::path &inputPath, const fs::path &outputPath, type::AudioFormat outputFormat);
-    bool FormatSupportsAttachedCover(type::AudioFormat format);
-    std::string OutputExtensionForFormat(type::AudioFormat format);
-}
+bool InputHasAttachedCover(const fs::path &inputPath);
+bool GetAttachedCover(const fs::path &inputPath, type::AttachedCoverArt &coverArt);
+bool WriteAttachedCover(const fs::path &outputPath, type::AudioFormat outputFormat,
+                        const type::AttachedCoverArt &coverArt);
+bool CopyAttachedCover(const fs::path &inputPath, const fs::path &outputPath, type::AudioFormat outputFormat);
+bool FormatSupportsAttachedCover(type::AudioFormat format);
+std::string OutputExtensionForFormat(type::AudioFormat format);
+} // namespace coverart
 
 namespace replaygain {
-    type::ReplayGainByTrack CalculateReplayGainTrack(const fs::path &path);
-    void ApplyReplayGain(const fs::path &path, type::ReplayGainByTrack trackGainInfo, type::ReplayGainByAlbum albumGainInfo);
-    void CalculateReplayGainAlbum(const fs::path &path);
-}
+type::ReplayGainByTrack CalculateReplayGainTrack(const fs::path &path);
+void ApplyReplayGain(const fs::path &path, type::ReplayGainByTrack trackGainInfo,
+                     type::ReplayGainByAlbum albumGainInfo);
+void CalculateReplayGainAlbum(const fs::path &path);
+} // namespace replaygain
 
 namespace sort {
-    void OrganizeIntoAlbums(const fs::path &inputDir, const fs::path &outputDir);
-    void OrganizeIntoArtistAlbum(const fs::path &inputDir, const fs::path &outputDir);
-    void RenameAlbumDirectoriesFromTags(const fs::path &rootDir);
-    void OrganizeAlbumsIntoArtists(const fs::path &rootDir);
-    void RenameFilesFromTags(const fs::path &rootDir);
-}
+void OrganizeIntoAlbums(const fs::path &inputDir, const fs::path &outputDir);
+void OrganizeIntoArtistAlbum(const fs::path &inputDir, const fs::path &outputDir);
+void RenameAlbumDirectoriesFromTags(const fs::path &rootDir);
+void OrganizeAlbumsIntoArtists(const fs::path &rootDir);
+void RenameFilesFromTags(const fs::path &rootDir);
+} // namespace sort
 
 namespace musicbrainz {
-    type::MBRequestData PrepareMBRequestData(const fs::path &inputPath);
-    std::string GetMBXML(const type::MBRequestData &reqData);
-    type::MusicBrainzXMLData ParseMBXML(const std::string &xmlStr);
-    void WriteMetaFromMBXML(const fs::path &inputPath, const type::MusicBrainzXMLData &mbData);
-}
-}
+type::MBRequestData PrepareMBRequestData(const fs::path &inputPath);
+std::string GetMBXML(const type::MBRequestData &reqData);
+type::MusicBrainzXMLData ParseMBXML(const std::string &xmlStr);
+void WriteMetaFromMBXML(const fs::path &inputPath, const type::MusicBrainzXMLData &mbData);
+} // namespace musicbrainz
+} // namespace bitfake
 #endif // OPERATIONS_HPP

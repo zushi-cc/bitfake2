@@ -545,8 +545,71 @@ AVSampleFormat PickSampleFormat(const AVCodec *encoder) {
     return encoder->sample_fmts[0];
 }
 
+int QualityToBitrateKbps(bitfake::type::AudioFormat format, bitfake::type::VBRQualities quality) {
+    switch (format) {
+    case bitfake::type::AudioFormat::MP3:
+        switch (quality) {
+        case bitfake::type::VBRQualities::V0:
+            return 245;
+        case bitfake::type::VBRQualities::V1:
+            return 225;
+        case bitfake::type::VBRQualities::V2:
+            return 190;
+        case bitfake::type::VBRQualities::V3:
+            return 175;
+        case bitfake::type::VBRQualities::V4:
+            return 165;
+        case bitfake::type::VBRQualities::V5:
+            return 130;
+        case bitfake::type::VBRQualities::V6:
+            return 115;
+        case bitfake::type::VBRQualities::V7:
+            return 100;
+        case bitfake::type::VBRQualities::V8:
+            return 85;
+        case bitfake::type::VBRQualities::V9:
+            return 65;
+        default:
+            return 192;
+        }
+    case bitfake::type::AudioFormat::AAC:
+    case bitfake::type::AudioFormat::M4A:
+        switch (quality) {
+        case bitfake::type::VBRQualities::Q0:
+            return 64;
+        case bitfake::type::VBRQualities::Q3:
+            return 96;
+        case bitfake::type::VBRQualities::Q6:
+            return 128;
+        case bitfake::type::VBRQualities::Q9:
+            return 192;
+        case bitfake::type::VBRQualities::Q10:
+            return 256;
+        default:
+            return 160;
+        }
+    case bitfake::type::AudioFormat::OPUS:
+        switch (quality) {
+        case bitfake::type::VBRQualities::Q0:
+            return 48;
+        case bitfake::type::VBRQualities::Q3:
+            return 80;
+        case bitfake::type::VBRQualities::Q6:
+            return 112;
+        case bitfake::type::VBRQualities::Q9:
+            return 160;
+        case bitfake::type::VBRQualities::Q10:
+            return 192;
+        default:
+            return 96;
+        }
+    default:
+        return 0;
+    }
+}
+
 bool ConvertWithLibAv(const fs::path &inputPath, const fs::path &outputFile, bitfake::type::AudioFormat format,
-                      int opusBitrateKbps) {
+                      bitfake::type::VBRQualities quality, int opusBitrateKbps) {
     AVFormatContext *inputFormat = nullptr;
     AVFormatContext *outputFormat = nullptr;
     AVCodecContext *decoderContext = nullptr;
@@ -641,6 +704,10 @@ bool ConvertWithLibAv(const fs::path &inputPath, const fs::path &outputFile, bit
         return false;
     }
 
+    if (format == bitfake::type::AudioFormat::MP3 && std::string_view(encoder->name) != "libmp3lame") {
+        warn("libav: libmp3lame is unavailable, using the native MP3 encoder instead.");
+    }
+
     status = avformat_alloc_output_context2(&outputFormat, nullptr, container, outputFile.string().c_str());
     if (status < 0 || !outputFormat) {
         err(("libav: failed to allocate output format: " + AvErrorToString(status)).c_str());
@@ -675,15 +742,27 @@ bool ConvertWithLibAv(const fs::path &inputPath, const fs::path &outputFile, bit
         return false;
     }
     encoderContext->sample_fmt = PickSampleFormat(encoder);
-    if (format == bitfake::type::AudioFormat::OPUS) {
+    const int qualityBitrateKbps = QualityToBitrateKbps(format, quality);
+    if (format == bitfake::type::AudioFormat::MP3) {
+        encoderContext->flags |= AV_CODEC_FLAG_QSCALE;
+        encoderContext->global_quality = static_cast<int>(quality) * FF_QP2LAMBDA;
+        encoderContext->bit_rate = qualityBitrateKbps > 0 ? qualityBitrateKbps * 1000 : 0;
+        if (encoderContext->priv_data) {
+            av_opt_set(encoderContext->priv_data, "compression_level", "2", 0);
+        }
+    } else if (format == bitfake::type::AudioFormat::OPUS) {
         if (opusBitrateKbps > 0) {
             encoderContext->bit_rate = opusBitrateKbps * 1000;
+        } else if (qualityBitrateKbps > 0) {
+            encoderContext->bit_rate = qualityBitrateKbps * 1000;
         } else {
             encoderContext->bit_rate = 0;
         }
         if (encoderContext->priv_data) {
             av_opt_set(encoderContext->priv_data, "vbr", "on", 0);
         }
+    } else if (qualityBitrateKbps > 0) {
+        encoderContext->bit_rate = qualityBitrateKbps * 1000;
     } else {
         encoderContext->bit_rate = 192000;
     }
@@ -691,6 +770,11 @@ bool ConvertWithLibAv(const fs::path &inputPath, const fs::path &outputFile, bit
 
     if (outputFormat->oformat->flags & AVFMT_GLOBALHEADER) {
         encoderContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+    }
+
+    if (format == bitfake::type::AudioFormat::MP3 && outputFormat->priv_data) {
+        av_opt_set(outputFormat->priv_data, "write_xing", "1", 0);
+        av_opt_set(outputFormat->priv_data, "id3v2_version", "3", 0);
     }
 
     status = avcodec_open2(encoderContext, encoder, nullptr);
@@ -1032,41 +1116,279 @@ bool ConvertWithLibAv(const fs::path &inputPath, const fs::path &outputFile, bit
 } // namespace
 
 namespace bitfake::nonuser {
-    bool ConvertToFileType(const fs::path &inputPath, const fs::path &outputPath, bitfake::type::AudioFormat format,
+bool ConvertToFileType(const fs::path &inputPath, const fs::path &outputPath, bitfake::type::AudioFormat format,
                        bitfake::type::VBRQualities quality) {
+    auto normalizedPath = [](const fs::path &path) { return fs::absolute(path).lexically_normal(); };
+
+    auto pathStartsWith = [&](const fs::path &path, const fs::path &root) {
+        const fs::path normalizedPathValue = normalizedPath(path);
+        const fs::path normalizedRootValue = normalizedPath(root);
+
+        auto pathIt = normalizedPathValue.begin();
+        auto rootIt = normalizedRootValue.begin();
+        for (; pathIt != normalizedPathValue.end() && rootIt != normalizedRootValue.end(); ++pathIt, ++rootIt) {
+            if (*pathIt != *rootIt) {
+                return false;
+            }
+        }
+
+        return rootIt == normalizedRootValue.end();
+    };
+
+    auto pathsReferToSameFile = [&](const fs::path &lhs, const fs::path &rhs) {
+        std::error_code ec;
+        if (fs::equivalent(lhs, rhs, ec) && !ec) {
+            return true;
+        }
+        return normalizedPath(lhs) == normalizedPath(rhs);
+    };
+
+    auto ensureParentDirectories = [&](const fs::path &filePath) {
+        const fs::path parentPath = filePath.parent_path();
+        if (parentPath.empty()) {
+            return true;
+        }
+
+        std::error_code ec;
+        fs::create_directories(parentPath, ec);
+        if (ec) {
+            err(("Failed to create output directory: " + parentPath.string() + " (" + ec.message() + ")").c_str());
+            return false;
+        }
+
+        return true;
+    };
+
+    auto removePartialOutput = [&](const fs::path &filePath) {
+        std::error_code ec;
+        fs::remove(filePath, ec);
+    };
+
+    auto convertSingleFile = [&](const fs::path &sourcePath, const fs::path &requestedOutputPath) {
+        if (!fs::exists(sourcePath)) {
+            err("Input path does not exist.");
+            return false;
+        }
+
+        if (!fs::is_regular_file(sourcePath)) {
+            err("Input path is not a regular file.");
+            return false;
+        }
+
+        if (!fc::IsSpecificAudioFormat(sourcePath, bitfake::type::AudioFormat::FLAC) &&
+            !fc::IsSpecificAudioFormat(sourcePath, bitfake::type::AudioFormat::WAV)) {
+            warn("Input file is not a lossless file. Conversion may result in quality loss. :(");
+        }
+
+        fs::path outputFile = requestedOutputPath;
+        if (fs::is_directory(requestedOutputPath)) {
+            outputFile = requestedOutputPath /
+                         (sourcePath.stem().string() + bitfake::coverart::OutputExtensionForFormat(format));
+        }
+
+        if (pathsReferToSameFile(sourcePath, outputFile)) {
+            err("Input and output paths resolve to the same file.");
+            return false;
+        }
+
+        if (fs::exists(outputFile)) {
+            err(("Output file already exists: " + outputFile.string()).c_str());
+            return false;
+        }
+
+        if (!ensureParentDirectories(outputFile)) {
+            return false;
+        }
+
+        const bool useLibsndfilePath =
+            (format == bitfake::type::AudioFormat::WAV || format == bitfake::type::AudioFormat::FLAC ||
+             format == bitfake::type::AudioFormat::OGG);
+
+        if (useLibsndfilePath) {
+            int outputFormat = 0;
+            switch (format) {
+            case bitfake::type::AudioFormat::WAV:
+                outputFormat = SF_FORMAT_WAV | SF_FORMAT_PCM_16;
+                break;
+            case bitfake::type::AudioFormat::FLAC:
+                outputFormat = SF_FORMAT_FLAC | SF_FORMAT_PCM_16;
+                break;
+            case bitfake::type::AudioFormat::OGG:
+                outputFormat = SF_FORMAT_OGG | SF_FORMAT_VORBIS;
+                break;
+            default:
+                err("Unsupported libsndfile output format.");
+                return false;
+            }
+
+            SF_INFO inInfo{};
+            SNDFILE *inFile = sf_open(sourcePath.string().c_str(), SFM_READ, &inInfo);
+            if (!inFile) {
+                err("Failed to open input audio file for conversion.");
+                return false;
+            }
+
+            SF_INFO outInfo{};
+            outInfo.samplerate = inInfo.samplerate;
+            outInfo.channels = inInfo.channels;
+            outInfo.format = outputFormat;
+
+            if (!sf_format_check(&outInfo)) {
+                err("Output format is not supported by the current libsndfile build.");
+                sf_close(inFile);
+                return false;
+            }
+
+            SNDFILE *outFile = sf_open(outputFile.string().c_str(), SFM_WRITE, &outInfo);
+            if (!outFile) {
+                err("Failed to create output audio file for conversion.");
+                sf_close(inFile);
+                removePartialOutput(outputFile);
+                return false;
+            }
+
+            constexpr sf_count_t frameBlockSize = 4096;
+            std::vector<float> pcmBuffer(static_cast<std::size_t>(frameBlockSize * inInfo.channels));
+
+            sf_count_t framesRead = 0;
+            bool writeFailed = false;
+            while ((framesRead = sf_readf_float(inFile, pcmBuffer.data(), frameBlockSize)) > 0) {
+                sf_count_t framesWritten = sf_writef_float(outFile, pcmBuffer.data(), framesRead);
+                if (framesWritten != framesRead) {
+                    err("Audio conversion write failed before all frames were written.");
+                    writeFailed = true;
+                    break;
+                }
+            }
+
+            sf_close(inFile);
+            sf_close(outFile);
+
+            if (writeFailed) {
+                removePartialOutput(outputFile);
+                return false;
+            }
+        } else {
+            if (!ConvertWithLibAv(sourcePath, outputFile, format, quality, gb::opusBitrateKbps)) {
+                err("Library-based conversion failed for requested output format.");
+                removePartialOutput(outputFile);
+                return false;
+            }
+        }
+
+        if (bitfake::coverart::InputHasAttachedCover(sourcePath)) {
+            if (!bitfake::coverart::FormatSupportsAttachedCover(format)) {
+                warn("Input has cover art, but selected output format does not support attached cover art copy yet.");
+            } else if (!bitfake::coverart::CopyAttachedCover(sourcePath, outputFile, format)) {
+                warn("Input has cover art, but cover art copy to output failed.");
+            }
+        }
+
+        TagLib::FileRef inTagRef(sourcePath.string().c_str());
+        TagLib::FileRef outTagRef(outputFile.string().c_str());
+        TagLib::PropertyMap inProperties = inTagRef.file()->properties();
+        if (!inTagRef.isNull() && inTagRef.tag() && !outTagRef.isNull() && outTagRef.tag()) {
+
+            // using local function saves on I/O by staging all changes in memory and writing them all at once when
+            // CommitMetaDataChanges is called, instead of writing each change separately as it's made.
+            bitfake::tagging::StageMetaDataChanges(inProperties, "Title", outTagRef.tag()->title().to8Bit(true));
+            bitfake::tagging::StageMetaDataChanges(inProperties, "Artist", outTagRef.tag()->artist().to8Bit(true));
+            bitfake::tagging::StageMetaDataChanges(inProperties, "Album", outTagRef.tag()->album().to8Bit(true));   
+            bitfake::tagging::StageMetaDataChanges(inProperties, "Comment", outTagRef.tag()->comment().to8Bit(true));
+            bitfake::tagging::StageMetaDataChanges(inProperties, "Genre", outTagRef.tag()->genre().to8Bit(true));
+            bitfake::tagging::StageMetaDataChanges(inProperties, "Year", std::to_string(outTagRef.tag()->year()));
+            bitfake::tagging::StageMetaDataChanges(inProperties, "Track", std::to_string(outTagRef.tag()->track()));
+
+            if (inTagRef.file() && outTagRef.file()) {
+                TagLib::PropertyMap outputProperties = outTagRef.file()->properties();
+                const TagLib::PropertyMap inputProperties = inTagRef.file()->properties();
+                for (const auto &[key, values] : inputProperties) {
+                    outputProperties[key] = values;
+                }
+                outTagRef.file()->setProperties(outputProperties);
+            }
+
+            if (!outTagRef.file()->save()) {
+                warn("Converted file was written, but metadata could not be saved.");
+            }
+
+            bitfake::tagging::CommitMetaDataChanges(outputFile, inProperties);
+        }
+
+        yay("Conversion completed successfully!");
+        plog("Output file:");
+        yay(outputFile.c_str());
+        return true;
+    };
+
     if (!fs::exists(inputPath)) {
         err("Input path does not exist.");
         return false;
     }
 
     if (fs::is_directory(inputPath)) {
-        if (!fs::exists(outputPath) || !fs::is_directory(outputPath)) {
-            err("Output path does not exist or is not a directory!");
+        if (fs::exists(outputPath) && !fs::is_directory(outputPath)) {
+            err("Output path exists and is not a directory!");
             return false;
         }
 
+        if (!fs::exists(outputPath)) {
+            std::error_code ec;
+            fs::create_directories(outputPath, ec);
+            if (ec) {
+                err(("Failed to create output directory: " + outputPath.string() + " (" + ec.message() + ")").c_str());
+                return false;
+            }
+        }
+
         std::size_t convertedCount = 0;
+        std::size_t failedCount = 0;
         std::size_t skippedCount = 0;
 
-        for (const auto &entry : fs::directory_iterator(inputPath)) {
-            if (!entry.is_regular_file()) {
+        const fs::path normalizedInputRoot = normalizedPath(inputPath);
+        const fs::path normalizedOutputRoot = normalizedPath(outputPath);
+        const bool outputInsideInput = pathStartsWith(normalizedOutputRoot, normalizedInputRoot);
+
+        for (fs::recursive_directory_iterator it(inputPath, fs::directory_options::skip_permission_denied), end;
+             it != end; ++it) {
+            const fs::path currentPath = it->path();
+
+            if (outputInsideInput && pathStartsWith(currentPath, outputPath)) {
+                it.disable_recursion_pending();
                 continue;
             }
 
-            if (!fc::IsValidAudioFile(entry.path())) {
+            if (!it->is_regular_file()) {
+                continue;
+            }
+
+            if (!fc::IsValidAudioFile(currentPath)) {
                 ++skippedCount;
                 continue;
             }
 
-            if (!ConvertToFileType(entry.path(), outputPath, format, quality)) {
-                err("Failed to convert file.");
-                return false;
+            std::error_code relativeError;
+            fs::path relativePath = fs::relative(currentPath, inputPath, relativeError);
+            if (relativeError || relativePath.empty()) {
+                relativePath = currentPath.filename();
+            }
+
+            fs::path outputFile = outputPath / relativePath;
+            outputFile.replace_extension(bitfake::coverart::OutputExtensionForFormat(format));
+
+            if (!convertSingleFile(currentPath, outputFile)) {
+                ++failedCount;
+                continue;
             }
             ++convertedCount;
         }
 
         if (convertedCount == 0) {
-            warn("No valid audio files found in input directory for conversion.");
+            if (failedCount > 0) {
+                err("No files were converted successfully.");
+            } else {
+                warn("No valid audio files found in input directory for conversion.");
+            }
             return false;
         }
 
@@ -1074,124 +1396,19 @@ namespace bitfake::nonuser {
         if (skippedCount > 0) {
             warn(("Skipped " + std::to_string(skippedCount) + " non-audio file(s).").c_str());
         }
+        if (failedCount > 0) {
+            warn(("Failed to convert " + std::to_string(failedCount) + " file(s).").c_str());
+        }
         return true;
     }
 
-    if (!fs::is_regular_file(inputPath)) {
-        err("Input path is not a regular file.");
-        return false;
-    }
-
-    if (!fc::IsSpecificAudioFormat(inputPath, bitfake::type::AudioFormat::FLAC) &&
-        !fc::IsSpecificAudioFormat(inputPath, bitfake::type::AudioFormat::WAV)) {
-        warn("Input file is not a lossless file. Conversion may result in quality loss. :(");
-    }
-
-    (void)quality;
-
-    fs::path outputFile = outputPath;
-    if (fs::is_directory(outputPath)) {
-        outputFile = outputPath / (inputPath.stem().string() + bitfake::coverart::OutputExtensionForFormat(format));
-    }
-
-    const bool useLibsndfilePath =
-        (format == bitfake::type::AudioFormat::WAV || format == bitfake::type::AudioFormat::FLAC || format == bitfake::type::AudioFormat::OGG);
-
-    if (useLibsndfilePath) {
-        int outputFormat = 0;
-        switch (format) {
-        case bitfake::type::AudioFormat::WAV:
-            outputFormat = SF_FORMAT_WAV | SF_FORMAT_PCM_16;
-            break;
-        case bitfake::type::AudioFormat::FLAC:
-            outputFormat = SF_FORMAT_FLAC | SF_FORMAT_PCM_16;
-            break;
-        case bitfake::type::AudioFormat::OGG:
-            outputFormat = SF_FORMAT_OGG | SF_FORMAT_VORBIS;
-            break;
-        default:
-            err("Unsupported libsndfile output format.");
-            return false;
-        }
-
-        SF_INFO inInfo{};
-        SNDFILE *inFile = sf_open(inputPath.string().c_str(), SFM_READ, &inInfo);
-        if (!inFile) {
-            err("Failed to open input audio file for conversion.");
-            return false;
-        }
-
-        SF_INFO outInfo{};
-        outInfo.samplerate = inInfo.samplerate;
-        outInfo.channels = inInfo.channels;
-        outInfo.format = outputFormat;
-
-        if (!sf_format_check(&outInfo)) {
-            err("Output format is not supported by the current libsndfile build.");
-            sf_close(inFile);
-            return false;
-        }
-
-        SNDFILE *outFile = sf_open(outputFile.string().c_str(), SFM_WRITE, &outInfo);
-        if (!outFile) {
-            err("Failed to create output audio file for conversion.");
-            sf_close(inFile);
-            return false;
-        }
-
-        constexpr sf_count_t frameBlockSize = 4096;
-        std::vector<float> pcmBuffer(static_cast<std::size_t>(frameBlockSize * inInfo.channels));
-
-        sf_count_t framesRead = 0;
-        while ((framesRead = sf_readf_float(inFile, pcmBuffer.data(), frameBlockSize)) > 0) {
-            sf_count_t framesWritten = sf_writef_float(outFile, pcmBuffer.data(), framesRead);
-            if (framesWritten != framesRead) {
-                err("Audio conversion write failed before all frames were written.");
-                sf_close(inFile);
-                sf_close(outFile);
-                return false;
-            }
-        }
-
-        sf_close(inFile);
-        sf_close(outFile);
-    } else {
-        if (!ConvertWithLibAv(inputPath, outputFile, format, gb::opusBitrateKbps)) {
-            err("Library-based conversion failed for requested output format.");
-            return false;
-        }
-    }
-
-    if (bitfake::coverart::InputHasAttachedCover(inputPath)) {
-        if (!bitfake::coverart::FormatSupportsAttachedCover(format)) {
-            warn("Input has cover art, but selected output format does not support attached cover art copy yet.");
-        } else if (!bitfake::coverart::CopyAttachedCover(inputPath, outputFile, format)) {
-            warn("Input has cover art, but cover art copy to output failed.");
-        }
-    }
-
-    TagLib::FileRef inTagRef(inputPath.string().c_str());
-    TagLib::FileRef outTagRef(outputFile.string().c_str());
-    if (!inTagRef.isNull() && inTagRef.tag() && !outTagRef.isNull() && outTagRef.tag()) {
-        outTagRef.tag()->setTitle(inTagRef.tag()->title());
-        outTagRef.tag()->setArtist(inTagRef.tag()->artist());
-        outTagRef.tag()->setAlbum(inTagRef.tag()->album());
-        outTagRef.tag()->setComment(inTagRef.tag()->comment());
-        outTagRef.tag()->setGenre(inTagRef.tag()->genre());
-        outTagRef.tag()->setYear(inTagRef.tag()->year());
-        outTagRef.tag()->setTrack(inTagRef.tag()->track());
-        outTagRef.file()->save();
-    }
-
-    yay("Conversion completed successfully!");
-    plog("Output file:");
-    yay(outputFile.c_str());
-    return true;
+    return convertSingleFile(inputPath, outputPath);
 }
-}
+} // namespace bitfake::nonuser
 
 namespace bitfake::replaygain {
-void ApplyReplayGain(const fs::path &path, bitfake::type::ReplayGainByTrack trackGainInfo, bitfake::type::ReplayGainByAlbum albumGainInfo) {
+void ApplyReplayGain(const fs::path &path, bitfake::type::ReplayGainByTrack trackGainInfo,
+                     bitfake::type::ReplayGainByAlbum albumGainInfo) {
     bool trackInfoEmpty = (trackGainInfo.trackGain == 0.0f && trackGainInfo.trackPeak == 0.0f);
     bool albumInfoEmpty = (albumGainInfo.albumGain == 0.0f && albumGainInfo.albumPeak == 0.0f);
 
@@ -1212,8 +1429,10 @@ void ApplyReplayGain(const fs::path &path, bitfake::type::ReplayGainByTrack trac
         const std::string trackArtist = existingMetadata.artist.empty() ? "<unknown artist>" : existingMetadata.artist;
         printf("--- %s - %s\nAlbum Gain / Peak: %.2f dB / %.6f\n\n", trackTitle.c_str(), trackArtist.c_str(),
                albumGainInfo.albumGain, albumGainInfo.albumPeak);
-        bitfake::tagging::StageMetaDataChanges(properties, "REPLAYGAIN_ALBUM_GAIN", std::to_string(albumGainInfo.albumGain) + " dB");
-        bitfake::tagging::StageMetaDataChanges(properties, "REPLAYGAIN_ALBUM_PEAK", std::to_string(albumGainInfo.albumPeak));
+        bitfake::tagging::StageMetaDataChanges(properties, "REPLAYGAIN_ALBUM_GAIN",
+                                               std::to_string(albumGainInfo.albumGain) + " dB");
+        bitfake::tagging::StageMetaDataChanges(properties, "REPLAYGAIN_ALBUM_PEAK",
+                                               std::to_string(albumGainInfo.albumPeak));
         bitfake::tagging::CommitMetaDataChanges(path, properties);
         return;
     }
@@ -1222,8 +1441,10 @@ void ApplyReplayGain(const fs::path &path, bitfake::type::ReplayGainByTrack trac
         const std::string trackArtist = existingMetadata.artist.empty() ? "<unknown artist>" : existingMetadata.artist;
         printf("--- %s - %s\nTrack Gain / Peak: %.2f dB / %.6f\n\n", trackTitle.c_str(), trackArtist.c_str(),
                trackGainInfo.trackGain, trackGainInfo.trackPeak);
-        bitfake::tagging::StageMetaDataChanges(properties, "REPLAYGAIN_TRACK_GAIN", std::to_string(trackGainInfo.trackGain) + " dB");
-        bitfake::tagging::StageMetaDataChanges(properties, "REPLAYGAIN_TRACK_PEAK", std::to_string(trackGainInfo.trackPeak));
+        bitfake::tagging::StageMetaDataChanges(properties, "REPLAYGAIN_TRACK_GAIN",
+                                               std::to_string(trackGainInfo.trackGain) + " dB");
+        bitfake::tagging::StageMetaDataChanges(properties, "REPLAYGAIN_TRACK_PEAK",
+                                               std::to_string(trackGainInfo.trackPeak));
         bitfake::tagging::CommitMetaDataChanges(path, properties);
         return;
     }
@@ -1234,10 +1455,14 @@ void ApplyReplayGain(const fs::path &path, bitfake::type::ReplayGainByTrack trac
     printf("--- %s - %s\nTrack Gain / Peak: %.2f dB / %.6f\nAlbum Gain / Peak: %.2f dB / %.6f\n\n", trackTitle.c_str(),
            trackArtist.c_str(), trackGainInfo.trackGain, trackGainInfo.trackPeak, albumGainInfo.albumGain,
            albumGainInfo.albumPeak);
-    bitfake::tagging::StageMetaDataChanges(properties, "REPLAYGAIN_TRACK_GAIN", std::to_string(trackGainInfo.trackGain) + " dB");
-    bitfake::tagging::StageMetaDataChanges(properties, "REPLAYGAIN_TRACK_PEAK", std::to_string(trackGainInfo.trackPeak));
-    bitfake::tagging::StageMetaDataChanges(properties, "REPLAYGAIN_ALBUM_GAIN", std::to_string(albumGainInfo.albumGain) + " dB");
-    bitfake::tagging::StageMetaDataChanges(properties, "REPLAYGAIN_ALBUM_PEAK", std::to_string(albumGainInfo.albumPeak));
+    bitfake::tagging::StageMetaDataChanges(properties, "REPLAYGAIN_TRACK_GAIN",
+                                           std::to_string(trackGainInfo.trackGain) + " dB");
+    bitfake::tagging::StageMetaDataChanges(properties, "REPLAYGAIN_TRACK_PEAK",
+                                           std::to_string(trackGainInfo.trackPeak));
+    bitfake::tagging::StageMetaDataChanges(properties, "REPLAYGAIN_ALBUM_GAIN",
+                                           std::to_string(albumGainInfo.albumGain) + " dB");
+    bitfake::tagging::StageMetaDataChanges(properties, "REPLAYGAIN_ALBUM_PEAK",
+                                           std::to_string(albumGainInfo.albumPeak));
     bitfake::tagging::CommitMetaDataChanges(path, properties);
 }
 
@@ -1358,7 +1583,8 @@ void CalculateReplayGainAlbum(const fs::path &path) {
     const unsigned int hardwareThreads = std::thread::hardware_concurrency();
     const std::size_t desiredWorkers = std::max<std::size_t>(1, static_cast<std::size_t>(hardwareThreads / 2));
     const std::size_t workerCount = std::min<std::size_t>(desiredWorkers, allTracks.size());
-    std::vector<bitfake::type::ReplayGainByTrack> trackResults(allTracks.size(), bitfake::type::ReplayGainByTrack{0.0f, 0.0f});
+    std::vector<bitfake::type::ReplayGainByTrack> trackResults(allTracks.size(),
+                                                               bitfake::type::ReplayGainByTrack{0.0f, 0.0f});
     std::atomic<std::size_t> nextIndex{0};
     std::vector<std::future<void>> workers;
     workers.reserve(workerCount);
@@ -1400,8 +1626,8 @@ void CalculateReplayGainAlbum(const fs::path &path) {
         }
 
         if (trackCount > 0) {
-            albumReplayGain[album] =
-                bitfake::type::ReplayGainByAlbum{static_cast<float>(totalGain / trackCount), static_cast<float>(maxPeak)};
+            albumReplayGain[album] = bitfake::type::ReplayGainByAlbum{static_cast<float>(totalGain / trackCount),
+                                                                      static_cast<float>(maxPeak)};
 
             const std::string albumName = album.empty() ? "<unknown album>" : album;
             plog(("Album replaygain calculated: " + albumName + " | tracks=" + std::to_string(trackCount) +
@@ -1424,7 +1650,7 @@ void CalculateReplayGainAlbum(const fs::path &path) {
     }
 }
 
-}
+} // namespace bitfake::replaygain
 
 namespace bitfake::sort {
 
@@ -2248,12 +2474,10 @@ void RenameFilesFromTags(const fs::path &rootDir) {
     }
 }
 
-
-
-}
+} // namespace bitfake::sort
 
 namespace bitfake::spectral {
-    void GenerateSpectrogram(const fs::path &inputPath, const fs::path &outputImagePath) {
+void GenerateSpectrogram(const fs::path &inputPath, const fs::path &outputImagePath) {
     if (!fs::exists(inputPath) || !fs::is_regular_file(inputPath) || !fc::IsValidAudioFile(inputPath)) {
         err("Input path does not exist or is not a regular file.");
         return;
@@ -2505,4 +2729,4 @@ namespace bitfake::spectral {
     yay(("Spectrogram image created at: " + outputPath.string()).c_str());
     // dude what the fuck is this spectrogram code i am so sorry for this abomination of a function
 }
-}
+} // namespace bitfake::spectral

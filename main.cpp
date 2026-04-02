@@ -186,7 +186,6 @@ int main(int argc, char *argv[]) {
     // if (fmt == 1 && (q < 10 || q > 14)) { /* OGG: Q0..Q10 */ }
     // if (fmt == 4 && (q < 15 || q > 23)) { /* FLAC: L0..L8 */ }
 
-
     if (fmt == 0 && (q < 0 || q > 9)) {
         err("MP3 format requires a VBR quality between V0 and V9 (inclusive)! (Do not use Qx or Lx for MP3! :( )");
         printf("format=%d quality=%d\n", static_cast<int>(gb::outputFormat), static_cast<int>(gb::VBRQuality));
@@ -314,7 +313,8 @@ int main(int argc, char *argv[]) {
         }
 
         if (strcmp(argv[j], "-sa") == 0 || strcmp(argv[j], "--spectralanalysis") == 0) {
-            std::vector<bitfake::type::SpectralAnalysisResult> results = bitfake::spectral::SpectralAnalysisList(gb::inputFile);
+            std::vector<bitfake::type::SpectralAnalysisResult> results =
+                bitfake::spectral::SpectralAnalysisList(gb::inputFile);
             if (results.empty()) {
                 err("No spectral analysis results found for input path.");
                 return EXIT_FAILURE;
@@ -379,8 +379,8 @@ int main(int argc, char *argv[]) {
                     }
 
                     try {
-                        bitfake::nonuser::ConvertToFileType(entry.path(), gb::conversionOutputDirectory, gb::outputFormat,
-                                              gb::VBRQuality);
+                        bitfake::nonuser::ConvertToFileType(entry.path(), gb::conversionOutputDirectory,
+                                                            gb::outputFormat, gb::VBRQuality);
                     } catch (const std::exception &e) {
                         err((std::string("Failed to convert file: ") + entry.path().string() + " Error: " + e.what())
                                 .c_str());
@@ -390,7 +390,7 @@ int main(int argc, char *argv[]) {
                 yay("Trying to convert single file >:P...");
                 try {
                     bitfake::nonuser::ConvertToFileType(gb::inputFile, gb::conversionOutputDirectory, gb::outputFormat,
-                                          gb::VBRQuality);
+                                                        gb::VBRQuality);
                 } catch (const std::exception &e) {
                     err((std::string("Failed to convert file: ") + gb::inputFile.string() + " Error: " + e.what())
                             .c_str());
@@ -438,7 +438,8 @@ int main(int argc, char *argv[]) {
                     const std::size_t desiredWorkers =
                         std::max<std::size_t>(1, static_cast<std::size_t>(hardwareThreads / 2));
                     const std::size_t workerCount = std::min<std::size_t>(desiredWorkers, tracks.size());
-                    std::vector<bitfake::type::ReplayGainByTrack> trackResults(tracks.size(), bitfake::type::ReplayGainByTrack{0.0f, 0.0f});
+                    std::vector<bitfake::type::ReplayGainByTrack> trackResults(
+                        tracks.size(), bitfake::type::ReplayGainByTrack{0.0f, 0.0f});
                     std::atomic<std::size_t> nextIndex{0};
                     std::vector<std::future<void>> workers;
                     workers.reserve(workerCount);
@@ -459,7 +460,8 @@ int main(int argc, char *argv[]) {
                         worker.get();
                     }
 
-                    bitfake::type::ReplayGainByAlbum albumGainInfo; // leave empty since we only want to apply track gain info
+                    bitfake::type::ReplayGainByAlbum
+                        albumGainInfo; // leave empty since we only want to apply track gain info
                     for (std::size_t i = 0; i < tracks.size(); ++i) {
                         bitfake::replaygain::ApplyReplayGain(tracks[i], trackResults[i], albumGainInfo);
                     }
@@ -468,8 +470,10 @@ int main(int argc, char *argv[]) {
                             .c_str());
                 }
             } else {
-                bitfake::type::ReplayGainByTrack trackGainInfo = bitfake::replaygain::CalculateReplayGainTrack(gb::inputFile);
-                bitfake::type::ReplayGainByAlbum albumGainInfo; // leave empty since we only want to apply track gain info
+                bitfake::type::ReplayGainByTrack trackGainInfo =
+                    bitfake::replaygain::CalculateReplayGainTrack(gb::inputFile);
+                bitfake::type::ReplayGainByAlbum
+                    albumGainInfo; // leave empty since we only want to apply track gain info
                 bitfake::replaygain::ApplyReplayGain(gb::inputFile, trackGainInfo, albumGainInfo);
                 yay("ReplayGain applied successfully!");
             }

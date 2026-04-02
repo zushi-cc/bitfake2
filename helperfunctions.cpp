@@ -109,9 +109,10 @@ std::vector<bitfake::type::AudioMetadataResult> GetMetaDataList(const fs::path &
         if (results.empty()) {
             warn("Metadata list: no valid audio files found in directory.");
         } else {
-            std::sort(results.begin(), results.end(), [](const bitfake::type::AudioMetadataResult &a, const bitfake::type::AudioMetadataResult &b) {
-                return a.metadata.trackNumber < b.metadata.trackNumber;
-            });
+            std::sort(results.begin(), results.end(),
+                      [](const bitfake::type::AudioMetadataResult &a, const bitfake::type::AudioMetadataResult &b) {
+                          return a.metadata.trackNumber < b.metadata.trackNumber;
+                      });
         }
         return results;
     }
@@ -196,9 +197,10 @@ std::vector<bitfake::type::ReplayGainResult> GetReplayGainList(const fs::path &p
         if (results.empty()) {
             warn("ReplayGain list: no valid audio files found in directory.");
         } else {
-            std::sort(results.begin(), results.end(), [](const bitfake::type::ReplayGainResult &a, const bitfake::type::ReplayGainResult &b) {
-                return a.info.trackNumber < b.info.trackNumber;
-            });
+            std::sort(results.begin(), results.end(),
+                      [](const bitfake::type::ReplayGainResult &a, const bitfake::type::ReplayGainResult &b) {
+                          return a.info.trackNumber < b.info.trackNumber;
+                      });
         }
         return results;
     }
@@ -211,8 +213,8 @@ std::vector<bitfake::type::ReplayGainResult> GetReplayGainList(const fs::path &p
     results.push_back({path, GetReplayGain(path)});
     return results;
 } // GetReplayGainList
- 
-}
+
+} // namespace bitfake::extract
 
 namespace bitfake::spectral {
 bitfake::type::SpectralAnalysisResult SpectralAnalysis(const fs::path &path) {
@@ -483,10 +485,11 @@ std::vector<bitfake::type::SpectralAnalysisResult> SpectralAnalysisList(const fs
         if (results.empty()) {
             warn("Spectral analysis list: no valid audio files found in directory.");
         } else {
-            std::sort(results.begin(), results.end(),
-                      [](const bitfake::type::SpectralAnalysisResult &a, const bitfake::type::SpectralAnalysisResult &b) {
-                          return a.title < b.title; // Sort by title for simplicity
-                      });
+            std::sort(
+                results.begin(), results.end(),
+                [](const bitfake::type::SpectralAnalysisResult &a, const bitfake::type::SpectralAnalysisResult &b) {
+                    return a.title < b.title; // Sort by title for simplicity
+                });
         }
         return results;
     }
@@ -499,10 +502,10 @@ std::vector<bitfake::type::SpectralAnalysisResult> SpectralAnalysisList(const fs
     results.push_back(SpectralAnalysis(path));
     return results;
 } // SpectralAnalysisList
-}
+} // namespace bitfake::spectral
 
 namespace bitfake::coverart {
-    bool InputHasAttachedCover(const fs::path &inputPath) {
+bool InputHasAttachedCover(const fs::path &inputPath) {
     bitfake::type::AttachedCoverArt coverArt;
     return GetAttachedCover(inputPath, coverArt);
 }
@@ -659,7 +662,8 @@ bool GetAttachedCover(const fs::path &inputPath, bitfake::type::AttachedCoverArt
     return false;
 }
 
-bool WriteAttachedCover(const fs::path &outputPath, bitfake::type::AudioFormat outputFormat, const bitfake::type::AttachedCoverArt &coverArt) {
+bool WriteAttachedCover(const fs::path &outputPath, bitfake::type::AudioFormat outputFormat,
+                        const bitfake::type::AttachedCoverArt &coverArt) {
     if (coverArt.imageData.empty()) {
         return false;
     }
@@ -736,7 +740,8 @@ bool CopyAttachedCover(const fs::path &inputPath, const fs::path &outputPath, bi
 }
 
 bool FormatSupportsAttachedCover(bitfake::type::AudioFormat format) {
-    return format == bitfake::type::AudioFormat::MP3 || format == bitfake::type::AudioFormat::FLAC || format == bitfake::type::AudioFormat::OPUS;
+    return format == bitfake::type::AudioFormat::MP3 || format == bitfake::type::AudioFormat::FLAC ||
+           format == bitfake::type::AudioFormat::OPUS;
 }
 
 std::string OutputExtensionForFormat(bitfake::type::AudioFormat format) {
@@ -758,6 +763,4 @@ std::string OutputExtensionForFormat(bitfake::type::AudioFormat format) {
     }
 }
 
-}
-
-
+} // namespace bitfake::coverart

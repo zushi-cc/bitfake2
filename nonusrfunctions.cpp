@@ -89,7 +89,7 @@ void MassTagDirectory(const fs::path &dirPath, const std::string &tag, const std
         return;
     }
 }
-}
+} // namespace bitfake::tagging
 
 namespace bitfake::nonuser {
 
@@ -103,16 +103,21 @@ bitfake::type::AudioFormat StringToAudioFormat(const std::string &str) {
 
     static const std::unordered_map<std::string, bitfake::type::AudioFormat> formatMap = {
         {"mp3", bitfake::type::AudioFormat::MP3}, // fuck (static int 0)
-        {"ogg", bitfake::type::AudioFormat::OGG},   {"m4a", bitfake::type::AudioFormat::M4A},   {"wav", bitfake::type::AudioFormat::WAV},
-        {"flac", bitfake::type::AudioFormat::FLAC}, {"aac", bitfake::type::AudioFormat::AAC},   {"wma", bitfake::type::AudioFormat::WMA},
-        {"opus", bitfake::type::AudioFormat::OPUS}, {"aiff", bitfake::type::AudioFormat::AIFF}, {"au", bitfake::type::AudioFormat::AU},
-        {"ra", bitfake::type::AudioFormat::RA},     {"ga3", bitfake::type::AudioFormat::GA3},   {"amr", bitfake::type::AudioFormat::AMR},
-        {"awb", bitfake::type::AudioFormat::AWB},   {"dss", bitfake::type::AudioFormat::DSS},   {"dvf", bitfake::type::AudioFormat::DVF},
-        {"m4b", bitfake::type::AudioFormat::M4B},   {"m4p", bitfake::type::AudioFormat::M4P},   {"mmf", bitfake::type::AudioFormat::MMF},
-        {"mpc", bitfake::type::AudioFormat::MPC},   {"msv", bitfake::type::AudioFormat::MSV},   {"nmf", bitfake::type::AudioFormat::NMF},
-        {"oga", bitfake::type::AudioFormat::OGA},   {"raw", bitfake::type::AudioFormat::RAW},   {"rf64", bitfake::type::AudioFormat::RF64},
-        {"sln", bitfake::type::AudioFormat::SLN},   {"tta", bitfake::type::AudioFormat::TTA},   {"voc", bitfake::type::AudioFormat::VOC},
-        {"vox", bitfake::type::AudioFormat::VOX},   {"wv", bitfake::type::AudioFormat::WV},     {"webm", bitfake::type::AudioFormat::WEBM},
+        {"ogg", bitfake::type::AudioFormat::OGG},   {"m4a", bitfake::type::AudioFormat::M4A},
+        {"wav", bitfake::type::AudioFormat::WAV},   {"flac", bitfake::type::AudioFormat::FLAC},
+        {"aac", bitfake::type::AudioFormat::AAC},   {"wma", bitfake::type::AudioFormat::WMA},
+        {"opus", bitfake::type::AudioFormat::OPUS}, {"aiff", bitfake::type::AudioFormat::AIFF},
+        {"au", bitfake::type::AudioFormat::AU},     {"ra", bitfake::type::AudioFormat::RA},
+        {"ga3", bitfake::type::AudioFormat::GA3},   {"amr", bitfake::type::AudioFormat::AMR},
+        {"awb", bitfake::type::AudioFormat::AWB},   {"dss", bitfake::type::AudioFormat::DSS},
+        {"dvf", bitfake::type::AudioFormat::DVF},   {"m4b", bitfake::type::AudioFormat::M4B},
+        {"m4p", bitfake::type::AudioFormat::M4P},   {"mmf", bitfake::type::AudioFormat::MMF},
+        {"mpc", bitfake::type::AudioFormat::MPC},   {"msv", bitfake::type::AudioFormat::MSV},
+        {"nmf", bitfake::type::AudioFormat::NMF},   {"oga", bitfake::type::AudioFormat::OGA},
+        {"raw", bitfake::type::AudioFormat::RAW},   {"rf64", bitfake::type::AudioFormat::RF64},
+        {"sln", bitfake::type::AudioFormat::SLN},   {"tta", bitfake::type::AudioFormat::TTA},
+        {"voc", bitfake::type::AudioFormat::VOC},   {"vox", bitfake::type::AudioFormat::VOX},
+        {"wv", bitfake::type::AudioFormat::WV},     {"webm", bitfake::type::AudioFormat::WEBM},
         {"svx8", bitfake::type::AudioFormat::SVX8}, {"cda", bitfake::type::AudioFormat::CDA}};
 
     auto it = formatMap.find(key);
@@ -130,13 +135,29 @@ bitfake::type::VBRQualities StringToVBRQuality(const std::string &str) {
 
     static const std::unordered_map<std::string, bitfake::type::VBRQualities> vbrMap = {
         {"v0", bitfake::type::VBRQualities::V0}, // MP3 (0 - 8 static int)
-        {"v1", bitfake::type::VBRQualities::V1}, {"v2", bitfake::type::VBRQualities::V2}, {"v3", bitfake::type::VBRQualities::V3}, {"v4", bitfake::type::VBRQualities::V4},
-        {"v5", bitfake::type::VBRQualities::V5}, {"v6", bitfake::type::VBRQualities::V6}, {"v7", bitfake::type::VBRQualities::V7}, {"v8", bitfake::type::VBRQualities::V8},
-        {"v9", bitfake::type::VBRQualities::V9}, {"q0", bitfake::type::VBRQualities::Q0}, // OGG VORBIS (9 - 13 static int)
-        {"q3", bitfake::type::VBRQualities::Q3}, {"q6", bitfake::type::VBRQualities::Q6}, {"q9", bitfake::type::VBRQualities::Q9}, {"q10", bitfake::type::VBRQualities::Q10},
+        {"v1", bitfake::type::VBRQualities::V1},
+        {"v2", bitfake::type::VBRQualities::V2},
+        {"v3", bitfake::type::VBRQualities::V3},
+        {"v4", bitfake::type::VBRQualities::V4},
+        {"v5", bitfake::type::VBRQualities::V5},
+        {"v6", bitfake::type::VBRQualities::V6},
+        {"v7", bitfake::type::VBRQualities::V7},
+        {"v8", bitfake::type::VBRQualities::V8},
+        {"v9", bitfake::type::VBRQualities::V9},
+        {"q0", bitfake::type::VBRQualities::Q0}, // OGG VORBIS (9 - 13 static int)
+        {"q3", bitfake::type::VBRQualities::Q3},
+        {"q6", bitfake::type::VBRQualities::Q6},
+        {"q9", bitfake::type::VBRQualities::Q9},
+        {"q10", bitfake::type::VBRQualities::Q10},
         {"l0", bitfake::type::VBRQualities::L0}, // FLAC encoding levels (14 - 22 static int)
-        {"l1", bitfake::type::VBRQualities::L1}, {"l2", bitfake::type::VBRQualities::L2}, {"l3", bitfake::type::VBRQualities::L3}, {"l4", bitfake::type::VBRQualities::L4},
-        {"l5", bitfake::type::VBRQualities::L5}, {"l6", bitfake::type::VBRQualities::L6}, {"l7", bitfake::type::VBRQualities::L7}, {"l8", bitfake::type::VBRQualities::L8}};
+        {"l1", bitfake::type::VBRQualities::L1},
+        {"l2", bitfake::type::VBRQualities::L2},
+        {"l3", bitfake::type::VBRQualities::L3},
+        {"l4", bitfake::type::VBRQualities::L4},
+        {"l5", bitfake::type::VBRQualities::L5},
+        {"l6", bitfake::type::VBRQualities::L6},
+        {"l7", bitfake::type::VBRQualities::L7},
+        {"l8", bitfake::type::VBRQualities::L8}};
 
     auto it = vbrMap.find(key);
     if (it != vbrMap.end()) {
@@ -153,4 +174,4 @@ bitfake::type::VBRQualities StringToVBRQuality(const std::string &str) {
     exit(EXIT_FAILURE);
 }
 
-}
+} // namespace bitfake::nonuser
