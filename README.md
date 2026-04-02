@@ -7,16 +7,16 @@ One common problem was that getting a track's metadata required long `ffprobe` c
   <img src="bitfakethelogotrust.png" width="400">
 </p>
 
-# Latest Version (1.9)
+# Latest Version (2.0)
 
-1.9 Brings musicbrainz STRAIGHT here. Works with one song for now. Its beautiful.
+Bitfake2 - 2.0 is released. This update was mainly to make future development easier by refactoring the code base to use easily readable function calls rather than store every operation under one namespace; Users get benefited with many conversion issues being fixed. VBR is now supported rather than forcing CBR on users for the `.MP3` File format.
 
 ## Implemented Features
 * Get metadata
 * Get ReplayGain info (useful for music players)
 * Spectral analysis on 44.1 kHz `.FLAC` files (higher sample rates may be misrepresented, so be careful)
 * Lossy diagnosis (banding score)
-* File Conversion (Works for outputs like `.wav`, `.flac`, `.ogg`, `.mp3`, `.aac`, `.opus`)
+* File Conversion + VBR Support (Works for outputs like `.wav`, `.flac`, `.ogg`, `.mp3`, `.aac`, `.opus`)
 * Tagging metadata (Works for single files, but not directories yet)
 * Calculating ReplayGain and applying it to files (Works for track replay gain iterating through directories, album replay gain is a bit funky?)
 * Directory Conversion (works for all previously mentioned formats!)
@@ -26,7 +26,10 @@ One common problem was that getting a track's metadata required long `ffprobe` c
 * Album folder renaming from tags (Artist - Album (Year))
 * Spectrogram generation (in .png)
 * Version info (WOW! BEST YET!)
-* MUSICBRAINZ IS HERE!!!!
+* MusicBrainz Syncing data.
+
+> [!IMPORTANT]
+> Users who would like to use the Musicbrainz sync must execersize caution, It may return inaccurate information. This is currently being investigated and it could be a possible issue with XML Parsing. Future updates will fix this issue alongside updating how data is grabbed and handled. This could be a musicbrainz issue; however, I want to clear up any possibility this issue could be from the feature.
 
 ## Implemented Development Features
 These features are meant to make contributing to the project easier:
