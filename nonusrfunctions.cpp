@@ -119,7 +119,7 @@ bitfake::type::AudioFormat StringToAudioFormat(const std::string &str) {
         {"voc", bitfake::type::AudioFormat::VOC},   {"vox", bitfake::type::AudioFormat::VOX},
         {"wv", bitfake::type::AudioFormat::WV},     {"webm", bitfake::type::AudioFormat::WEBM},
         {"svx8", bitfake::type::AudioFormat::SVX8}, {"cda", bitfake::type::AudioFormat::CDA},
-        {"general", bitfake::type::AudioFormat::GENERAL}, {"wv", bitfake::type::AudioFormat::WAVPACK}};
+        {"general", bitfake::type::AudioFormat::GENERAL}, {"alac", bitfake::type::AudioFormat::ALAC}};
 
     auto it = formatMap.find(key);
     if (it != formatMap.end()) {

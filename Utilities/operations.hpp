@@ -20,6 +20,7 @@ enum class AudioFormat {
     M4A,
     WAV,
     FLAC,
+    ALAC,
     AAC,
     WMA,
     OPUS,
@@ -46,7 +47,6 @@ enum class AudioFormat {
     VOX,
     WV,
     WEBM,
-    WAVPACK,
     SVX8,
     CDA,
     GENERAL
