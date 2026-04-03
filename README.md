@@ -130,6 +130,33 @@ Then add to your system packages:
 environment.systemPackages = [ inputs.bitfake2.packages.${pkgs.system}.default ];
 ```
 
+
+Chimera Linux:
+
+Clone the bitfake2 repo:
+```sh
+git clone https://github.com/Ray17x/bitfake2
+```
+
+Install the packages:
+```sh
+doas apk add taglib-devel fftw-devel libsndfile-devel libebur128-devel ffmpeg-devel curl-devel
+```
+> [!Note]
+>
+> These additional dependencies are required to build Bitfake2:
+>
+> ```sh
+> doas apk add clang gmake
+> ```
+
+Once all dependencies required for Bitfake2 are installed:
+
+```sh
+make
+doas make install
+```
+
 FreeBSD:
 
 Clone the bitfake2 repo:
