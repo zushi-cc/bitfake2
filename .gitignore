@@ -21,3 +21,5 @@ bitf
 *.alac
 *.aac
 
+*.dll
+*.exe

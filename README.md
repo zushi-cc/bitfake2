@@ -102,8 +102,12 @@ Alpine:
 sudo apk add --no-cache build-base taglib-dev fftw-dev ebur128-dev libsndfile-dev ffmpeg-dev
 ```
 
-NixOS:
+Windows (MSYS2/MinGW):
+```sh
+pacman -Syu --needed base-devel mingw-w64-x86_64-taglib mingw-w64-x86_64-fftw mingw-w64-x86_64-libebur128 mingw-w64-x86_64-libsndfile mingw-w64-x86_64-ffmpeg mingw-w64-x86_64-toolchain mingw-w64-x86_64-curl
 
+```
+NixOS:
 Users that are using npins:
 ```sh
 npins add github Ray17x bitfake2 --branch main
@@ -227,7 +231,7 @@ bmake install
 
 Overall dependency list (for other distros):
 ```
-build-base taglib-dev fftw-dev ebur128-dev libsndfile-dev libavformat libavcodec libavutil libswresample
+build-base taglib-dev fftw-dev ebur128-dev libsndfile-dev libavformat libavcodec libavutil libswresample curl-dev
 ```
 
 2. Clone the project and compile

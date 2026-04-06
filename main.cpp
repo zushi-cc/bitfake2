@@ -11,6 +11,7 @@ namespace fs = std::filesystem;
 namespace fc = FileChecks;
 #include "Utilities/operations.hpp"
 #include "Utilities/globals.hpp"
+#include "Utilities/pathutils.hpp"
 namespace gb = globals;
 #include <taglib/fileref.h>
 #include <taglib/tpropertymap.h>
@@ -221,7 +222,7 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     } else {
         plog("Output file will be created/written to: ");
-        yay(gb::outputFile.c_str());
+        yay(bitfake::pathutils::pathToString(gb::outputFile).c_str());
         gb::outputToTerminal = false;
     }
 

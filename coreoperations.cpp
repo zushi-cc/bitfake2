@@ -1,5 +1,6 @@
 #include <cstdio>
 #include "Utilities/consoleout.hpp"
+#include "Utilities/pathutils.hpp"
 using namespace ConsoleOut;
 #include <filesystem>
 namespace fs = std::filesystem;
@@ -1323,7 +1324,7 @@ bool ConvertToFileType(const fs::path &inputPath, const fs::path &outputPath, bi
 
         yay("Conversion completed successfully!");
         plog("Output file:");
-        yay(outputFile.c_str());
+        yay(bitfake::pathutils::pathToString(outputFile).c_str());
         return true;
     };
 
@@ -2402,22 +2403,27 @@ void RenameFilesFromTags(const fs::path &rootDir) {
     int failedCount = 0;
 
     for (const fs::path &filePath : filesToRename) {
-        TagLib::FileRef fileRef(filePath.string().c_str());
-        if (fileRef.isNull() || !fileRef.tag()) {
-            warn(("Skipping file (no tags): " + filePath.filename().string()).c_str());
-            ++skippedCount;
-            continue;
-        }
-
-        TagLib::Tag *tag = fileRef.tag();
-        std::string artist = tag->artist().to8Bit(true);
-        std::string title = tag->title().to8Bit(true);
+        std::string artist;
+        std::string title;
         std::string trackNum;
 
-        if (tag->track() > 0) {
-            std::ostringstream oss;
-            oss << std::setw(2) << std::setfill('0') << tag->track();
-            trackNum = oss.str();
+        {
+            TagLib::FileRef fileRef(filePath.string().c_str());
+            if (fileRef.isNull() || !fileRef.tag()) {
+                warn(("Skipping file (no tags): " + filePath.filename().string()).c_str());
+                ++skippedCount;
+                continue;
+            }
+
+            TagLib::Tag *tag = fileRef.tag();
+            artist = tag->artist().to8Bit(true);
+            title = tag->title().to8Bit(true);
+
+            if (tag->track() > 0) {
+                std::ostringstream oss;
+                oss << std::setw(2) << std::setfill('0') << tag->track();
+                trackNum = oss.str();
+            }
         }
 
         if (title.empty()) {
