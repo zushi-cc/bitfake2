@@ -29,7 +29,7 @@ Bitfake2 - 2.0 is released. This update was mainly to make future development ea
 * MusicBrainz Syncing data.
 
 > [!IMPORTANT]
-> Users no longer must excersize *extreme* caution when using musicbrainz; however it may still return inaccurate information, I can't do anything about that; I will work on a feature that lets you confirm that the data entrys seem and/or are proper before writing. I really really REALLLLLY apologize to those who were affected by the previous issue and the current one.
+> MusicBrainz is fully functional and this message will be removed upon the next tagged release. It is on live versions, please feel free to report any bugs to me after checking that musicbrainz has the metadata you are looking for.
 
 ## Implemented Development Features
 These features are meant to make contributing to the project easier:
