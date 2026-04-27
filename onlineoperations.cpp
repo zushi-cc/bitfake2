@@ -20,12 +20,13 @@ namespace gb = globals;
 #include <limits>
 #include <climits>
 #include <string>
+#include <fstream>
 #include <chrono>
 #include <thread>
 
 #include "Utilities/pugixml.hpp"
 
-namespace bitfake::musicbrainz {
+namespace bitfake::online {
 
 // Helper functions to help extract metadata from a JSON/XML
 // which is expected from libcurl when we request metadata from musicbrainz
@@ -938,4 +939,252 @@ void WriteMetaFromMBXML(const fs::path &inputPath, const bitfake::type::MusicBra
     return;
 }
 
-} // namespace bitfake::musicbrainz
+// musicbrainz end
+// lrclib start
+
+// type::LRCRequestData PrepareLRCRequestData(const fs::path &inputPath);
+// type::LRCLibData GetLRCLibData(const type::LRCRequestData &reqData);
+// type::LRCLibData ParseLRCLibData(const std::string &responseStr, const type::LRCRequestData &reqData);
+
+type::LRCRequestData PrepareLRCRequestData(const fs::path &inputPath) {
+    type::LRCRequestData requestData;
+
+    auto trim = [](const std::string &str) -> std::string {
+        const size_t first = str.find_first_not_of(" \t\n\r\f\v");
+        if (first == std::string::npos) {
+            return "";
+        }
+        const size_t last = str.find_last_not_of(" \t\n\r\f\v");
+        return str.substr(first, last - first + 1);
+    };
+
+    const type::AudioMetadata md = bitfake::extract::GetMetaData(inputPath);
+    requestData.inputPath = inputPath;
+    requestData.artist = trim(md.artist);
+    requestData.title = trim(md.title);
+    requestData.album = trim(md.album);
+    requestData.trackNumber = md.trackNumber;
+
+    return requestData;
+}
+
+type::LRCLibData ParseLRCLibData(const std::string &responseStr, const type::LRCRequestData &reqData) {
+    type::LRCLibData data;
+    data.requestData = reqData;
+
+    auto extractJsonString = [&](const std::string &json, const std::string &key) -> std::string {
+        const std::string keyToken = "\"" + key + "\"";
+        const size_t keyPos = json.find(keyToken);
+        if (keyPos == std::string::npos) {
+            return "";
+        }
+
+        const size_t colonPos = json.find(':', keyPos + keyToken.size());
+        if (colonPos == std::string::npos) {
+            return "";
+        }
+
+        size_t valuePos = colonPos + 1;
+        while (valuePos < json.size() && std::isspace(static_cast<unsigned char>(json[valuePos])) != 0) {
+            ++valuePos;
+        }
+
+        if (valuePos >= json.size() || json[valuePos] != '"') {
+            return "";
+        }
+
+        ++valuePos;
+        std::string out;
+        while (valuePos < json.size()) {
+            const char c = json[valuePos++];
+            if (c == '\\' && valuePos < json.size()) {
+                const char esc = json[valuePos++];
+                switch (esc) {
+                    case 'n':
+                        out.push_back('\n');
+                        break;
+                    case 'r':
+                        out.push_back('\r');
+                        break;
+                    case 't':
+                        out.push_back('\t');
+                        break;
+                    case '"':
+                        out.push_back('"');
+                        break;
+                    case '\\':
+                        out.push_back('\\');
+                        break;
+                    default:
+                        out.push_back(esc);
+                        break;
+                }
+                continue;
+            }
+
+            if (c == '"') {
+                break;
+            }
+            out.push_back(c);
+        }
+
+        return out;
+    };
+
+    data.SyncLyrics = extractJsonString(responseStr, "syncedLyrics");
+    if (data.SyncLyrics.empty()) {
+        data.SyncLyrics = extractJsonString(responseStr, "synced_lyrics");
+    }
+
+    data.NoSyncLyrics = extractJsonString(responseStr, "plainLyrics");
+    if (data.NoSyncLyrics.empty()) {
+        data.NoSyncLyrics = extractJsonString(responseStr, "plain_lyrics");
+    }
+
+    data.Sourcelink = "https://lrclib.net/";
+    return data;
+}
+
+static std::string SanitizeFilenamePart(std::string value) {
+    for (char &ch : value) {
+        if (ch == '/' || ch == '\\' || ch == ':' || ch == '*' || ch == '?' || ch == '"' || ch == '<' || ch == '>' ||
+            ch == '|') {
+            ch = '_';
+        }
+    }
+
+    while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())) != 0) {
+        value.pop_back();
+    }
+    size_t start = 0;
+    while (start < value.size() && std::isspace(static_cast<unsigned char>(value[start])) != 0) {
+        ++start;
+    }
+    if (start > 0) {
+        value.erase(0, start);
+    }
+    return value;
+}
+
+fs::path GetLRCLibOutputPath(const type::LRCRequestData &reqData) {
+    fs::path outputDir = reqData.inputPath.empty() ? fs::current_path() : reqData.inputPath.parent_path();
+    std::string baseName;
+
+    if (!reqData.inputPath.empty() && !reqData.inputPath.stem().string().empty()) {
+        baseName = reqData.inputPath.stem().string();
+    } else {
+        const std::string artistPart = SanitizeFilenamePart(reqData.artist);
+        const std::string titlePart = SanitizeFilenamePart(reqData.title);
+        if (!artistPart.empty() && !titlePart.empty()) {
+            baseName = artistPart + " - " + titlePart;
+        } else if (!titlePart.empty()) {
+            baseName = titlePart;
+        } else {
+            baseName = "lyrics";
+        }
+    }
+
+    return outputDir / (SanitizeFilenamePart(baseName) + ".lrc");
+}
+
+bool WriteLRCLibToFile(const type::LRCRequestData &reqData, const type::LRCLibData &lrcData, fs::path &writtenPath) {
+    const std::string lyricsToWrite = !lrcData.SyncLyrics.empty() ? lrcData.SyncLyrics : lrcData.NoSyncLyrics;
+    if (lyricsToWrite.empty()) {
+        warn("LRCLib returned no lyrics to write.");
+        return false;
+    }
+
+    const fs::path outPath = GetLRCLibOutputPath(reqData);
+    std::ofstream outFile(outPath, std::ios::out | std::ios::trunc);
+    if (!outFile.is_open()) {
+        err(("Failed to write LRCLib lyrics file: " + outPath.string()).c_str());
+        return false;
+    }
+
+    outFile << lyricsToWrite;
+    outFile.close();
+
+    writtenPath = outPath;
+    plog(("LRCLib lyrics written to: " + outPath.string()).c_str());
+    return true;
+}
+
+type::LRCLibData GetLRCLibData(const type::LRCRequestData &reqData) {
+    type::LRCLibData emptyResult;
+    emptyResult.requestData = reqData;
+
+    if (reqData.title.empty() || reqData.artist.empty()) {
+        warn("LRCLib request skipped: title and artist are required.");
+        return emptyResult;
+    }
+
+    CURL *curl = curl_easy_init();
+    if (!curl) {
+        err("Failed to initialize libcurl for LRCLib request.");
+        return emptyResult;
+    }
+
+    std::string response;
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+
+    const std::string userAgent = "bitfake2/" + gb::version + " (ray@atl.tools)";
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent.c_str());
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+
+    char *encArtist = curl_easy_escape(curl, reqData.artist.c_str(), static_cast<int>(reqData.artist.size()));
+    char *encTitle = curl_easy_escape(curl, reqData.title.c_str(), static_cast<int>(reqData.title.size()));
+    char *encAlbum = nullptr;
+    if (!reqData.album.empty()) {
+        encAlbum = curl_easy_escape(curl, reqData.album.c_str(), static_cast<int>(reqData.album.size()));
+    }
+
+    if (encArtist == nullptr || encTitle == nullptr || (!reqData.album.empty() && encAlbum == nullptr)) {
+        if (encArtist != nullptr) {
+            curl_free(encArtist);
+        }
+        if (encTitle != nullptr) {
+            curl_free(encTitle);
+        }
+        if (encAlbum != nullptr) {
+            curl_free(encAlbum);
+        }
+        curl_easy_cleanup(curl);
+        err("LRCLib request failed: unable to URL-encode query.");
+        return emptyResult;
+    }
+
+    std::string url = "https://lrclib.net/api/get?artist_name=" + std::string(encArtist) +
+                      "&track_name=" + std::string(encTitle);
+    if (encAlbum != nullptr) {
+        url += "&album_name=" + std::string(encAlbum);
+    }
+
+    curl_free(encArtist);
+    curl_free(encTitle);
+    if (encAlbum != nullptr) {
+        curl_free(encAlbum);
+    }
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+
+    const CURLcode res = curl_easy_perform(curl);
+    if (res != CURLE_OK) {
+        err(("LRCLib request failed: " + std::string(curl_easy_strerror(res))).c_str());
+        curl_easy_cleanup(curl);
+        return emptyResult;
+    }
+
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+
+    if (httpCode >= 400) {
+        warn(("LRCLib request returned HTTP status " + std::to_string(httpCode) + ".").c_str());
+        return emptyResult;
+    }
+
+    return ParseLRCLibData(response, reqData);
+}
+
+} // namespace bitfake::online

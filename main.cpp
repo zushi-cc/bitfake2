@@ -65,6 +65,7 @@ int main(int argc, char *argv[]) {
                 printf(
                     "  -mb,   --musicbrainz                     Fetch metadata from MusicBrainz and write to file\n");
                 printf("  -mbnc, --musicbrainz-no-confirm          Bypass confirmation and write MusicBrainz metadata immediately\n");
+                printf("  -lrc,  --lrclib                          Fetch lyrics from LRCLib and write a .lrc file next to input\n");
                 printf("  -v,    --version                         Show program version\n");
                 return EXIT_SUCCESS;
             }
@@ -590,9 +591,9 @@ int main(int argc, char *argv[]) {
                 return EXIT_FAILURE;
             }
 
-            bitfake::type::MBRequestData reqData = bitfake::musicbrainz::PrepareMBRequestData(gb::inputFile);
+            bitfake::type::MBRequestData reqData = bitfake::online::PrepareMBRequestData(gb::inputFile);
 
-            std::string xmlStr = bitfake::musicbrainz::GetMBXML(reqData);
+            std::string xmlStr = bitfake::online::GetMBXML(reqData);
             if (xmlStr.empty()) {
                 err("MusicBrainz metadata fetch returned no data; metadata was not written.");
                 return EXIT_FAILURE;
@@ -603,7 +604,7 @@ int main(int argc, char *argv[]) {
                 return EXIT_FAILURE;
             }
 
-            bitfake::type::MusicBrainzXMLData mbData = bitfake::musicbrainz::ParseMBXML(xmlStr, reqData);
+            bitfake::type::MusicBrainzXMLData mbData = bitfake::online::ParseMBXML(xmlStr, reqData);
             if (mbData.MUSICBRAINZ_TRACKID.empty() && mbData.recordingTitle.empty() && mbData.artistName.empty()) {
                 err("MusicBrainz response did not include usable recording metadata; metadata was not written.");
                 return EXIT_FAILURE;
@@ -646,8 +647,51 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            bitfake::musicbrainz::WriteMetaFromMBXML(gb::inputFile, mbData);
+            bitfake::online::WriteMetaFromMBXML(gb::inputFile, mbData);
             yay("Metadata fetched from MusicBrainz and written to file successfully!");
+        }
+
+        if (strcmp(argv[j], "-lrc") == 0 || strcmp(argv[j], "--lrclib") == 0) {
+            if (fs::is_directory(gb::inputFile)) {
+                err("LRCLib lyrics fetch requires a single audio file as input! Use -i <file>");
+                return EXIT_FAILURE;
+            }
+
+            bitfake::type::LRCRequestData reqData = bitfake::online::PrepareLRCRequestData(gb::inputFile);
+            bitfake::type::LRCLibData lrcData = bitfake::online::GetLRCLibData(reqData);
+            if (lrcData.SyncLyrics.empty() && lrcData.NoSyncLyrics.empty()) {
+                err("LRCLib returned no lyrics for this file; no .lrc file was written.");
+                return EXIT_FAILURE;
+            }
+
+            const fs::path lrcOutputPath = bitfake::online::GetLRCLibOutputPath(reqData);
+            const std::string songName = reqData.title.empty() ? gb::inputFile.stem().string() : reqData.title;
+            const char *lyricsKind = lrcData.SyncLyrics.empty() ? "Plain Lyrics" : "Synced Lyrics";
+
+            printf("Found lyrics for:\n");
+            printf("  %s - %s\n", songName.c_str(), lyricsKind);
+            printf("File will be written to %s\n", lrcOutputPath.string().c_str());
+            printf("Write [y/N]: ");
+
+            std::string answer;
+            if (!std::getline(std::cin, answer)) {
+                err("Failed to read confirmation input; .lrc file was not written.");
+                return EXIT_FAILURE;
+            }
+
+            const bool approved = !answer.empty() && (answer == "y" || answer == "Y" || answer == "yes" || answer == "YES");
+            if (!approved) {
+                warn("LRCLib write canceled by user.");
+                continue;
+            }
+
+            fs::path writtenPath;
+            if (!bitfake::online::WriteLRCLibToFile(reqData, lrcData, writtenPath)) {
+                err("Failed to write .lrc file.");
+                return EXIT_FAILURE;
+            }
+
+            yay("Lyrics fetched from LRCLib and written successfully!");
         }
     }
 
