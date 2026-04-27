@@ -27,6 +27,7 @@ Bitfake2 - 2.0 is released. This update was mainly to make future development ea
 * Spectrogram generation (in .png)
 * Version info (WOW! BEST YET!)
 * MusicBrainz Syncing data.
+* Downloading lyrics from the internet (Synced Lyrics Preferred, leaves out as seperate file because that mattered for some reason) via LIBLRC ( no additonal dependencies )
 
 > [!IMPORTANT]
 > MusicBrainz is fully functional and this message will be removed upon the next tagged release. It is on live versions, please feel free to report any bugs to me after checking that musicbrainz has the metadata you are looking for.
