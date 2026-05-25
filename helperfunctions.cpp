@@ -10,6 +10,7 @@ namespace fs = std::filesystem;
 namespace fc = FileChecks;
 #include "Utilities/operations.hpp"
 #include "Utilities/globals.hpp"
+#include "Utilities/parallel.hpp"
 #include <taglib/fileref.h>
 #include <taglib/tag.h>
 #include <taglib/tpropertymap.h>
@@ -100,11 +101,35 @@ std::vector<bitfake::type::AudioMetadataResult> GetMetaDataList(const fs::path &
     }
 
     if (fs::is_directory(path)) {
-        for (const auto &entry : fs::directory_iterator(path)) {
-            if (fc::IsValidAudioFile(entry.path())) {
-                results.push_back({entry.path(), GetMetaData(entry.path())});
+        std::vector<fs::path> files;
+        if (globals::recursive) {
+            for (const auto &entry : fs::recursive_directory_iterator(path, fs::directory_options::skip_permission_denied)) {
+                if (!entry.is_regular_file()) {
+                    continue;
+                }
+                if (!fc::IsValidAudioFile(entry.path())) {
+                    continue;
+                }
+                files.push_back(entry.path());
+            }
+        } else {
+            for (const auto &entry : fs::directory_iterator(path, fs::directory_options::skip_permission_denied)) {
+                if (!entry.is_regular_file()) {
+                    continue;
+                }
+                if (!fc::IsValidAudioFile(entry.path())) {
+                    continue;
+                }
+                files.push_back(entry.path());
             }
         }
+
+        results.resize(files.size());
+        const std::size_t workerCount =
+            bitfake::parallel::ComputeWorkerCount(files.size(), globals::Parallel, globals::threads);
+        bitfake::parallel::ParallelFor(files.size(), workerCount, [&](std::size_t index) {
+            results[index] = {files[index], GetMetaData(files[index])};
+        });
 
         if (results.empty()) {
             warn("Metadata list: no valid audio files found in directory.");
@@ -188,11 +213,35 @@ std::vector<bitfake::type::ReplayGainResult> GetReplayGainList(const fs::path &p
     }
 
     if (fs::is_directory(path)) {
-        for (const auto &entry : fs::directory_iterator(path)) {
-            if (fc::IsValidAudioFile(entry.path())) {
-                results.push_back({entry.path(), GetReplayGain(entry.path())});
+        std::vector<fs::path> files;
+        if (globals::recursive) {
+            for (const auto &entry : fs::recursive_directory_iterator(path, fs::directory_options::skip_permission_denied)) {
+                if (!entry.is_regular_file()) {
+                    continue;
+                }
+                if (!fc::IsValidAudioFile(entry.path())) {
+                    continue;
+                }
+                files.push_back(entry.path());
+            }
+        } else {
+            for (const auto &entry : fs::directory_iterator(path, fs::directory_options::skip_permission_denied)) {
+                if (!entry.is_regular_file()) {
+                    continue;
+                }
+                if (!fc::IsValidAudioFile(entry.path())) {
+                    continue;
+                }
+                files.push_back(entry.path());
             }
         }
+
+        results.resize(files.size());
+        const std::size_t workerCount =
+            bitfake::parallel::ComputeWorkerCount(files.size(), globals::Parallel, globals::threads);
+        bitfake::parallel::ParallelFor(files.size(), workerCount, [&](std::size_t index) {
+            results[index] = {files[index], GetReplayGain(files[index])};
+        });
 
         if (results.empty()) {
             warn("ReplayGain list: no valid audio files found in directory.");

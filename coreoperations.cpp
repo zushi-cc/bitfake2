@@ -8,6 +8,7 @@ namespace fs = std::filesystem;
 namespace fc = FileChecks;
 #include "Utilities/operations.hpp"
 #include "Utilities/globals.hpp"
+#include "Utilities/parallel.hpp"
 namespace gb = globals;
 #include <taglib/fileref.h>
 #include <taglib/tpropertymap.h>
@@ -596,13 +597,13 @@ int QualityToBitrateKbps(bitfake::type::AudioFormat format, bitfake::type::VBRQu
         case bitfake::type::VBRQualities::Q3:
             return 80;
         case bitfake::type::VBRQualities::Q6:
-            return 112;
+            return 128;
         case bitfake::type::VBRQualities::Q9:
             return 160;
         case bitfake::type::VBRQualities::Q10:
             return 192;
         default:
-            return 96;
+            return 128;
         }
     default:
         return 0;
@@ -1165,7 +1166,8 @@ bool ConvertToFileType(const fs::path &inputPath, const fs::path &outputPath, bi
         fs::remove(filePath, ec);
     };
 
-    auto convertSingleFile = [&](const fs::path &sourcePath, const fs::path &requestedOutputPath) {
+    auto convertSingleFile = [&](const fs::path &sourcePath, const fs::path &requestedOutputPath,
+                                 bool batchMode = false) {
         if (!fs::exists(sourcePath)) {
             err("Input path does not exist.");
             return false;
@@ -1254,6 +1256,20 @@ bool ConvertToFileType(const fs::path &inputPath, const fs::path &outputPath, bi
                 return false;
             }
 
+            if (format == bitfake::type::AudioFormat::FLAC) {
+#ifdef SFC_SET_COMPRESSION_LEVEL
+                const int level = std::clamp(static_cast<int>(quality), 0, 8);
+                const float compression = static_cast<float>(level) / 8.0f;
+                sf_command(outFile, SFC_SET_COMPRESSION_LEVEL, &compression, sizeof(compression));
+#endif
+            } else if (format == bitfake::type::AudioFormat::OGG) {
+#ifdef SFC_SET_VBR_ENCODING_QUALITY
+                const int vbrInt = std::clamp(static_cast<int>(quality), 0, 10);
+                const float vbr = static_cast<float>(vbrInt) / 10.0f;
+                sf_command(outFile, SFC_SET_VBR_ENCODING_QUALITY, &vbr, sizeof(vbr));
+#endif
+            }
+
             constexpr sf_count_t frameBlockSize = 4096;
             std::vector<float> pcmBuffer(static_cast<std::size_t>(frameBlockSize * inInfo.channels));
 
@@ -1283,6 +1299,27 @@ bool ConvertToFileType(const fs::path &inputPath, const fs::path &outputPath, bi
             }
         }
 
+        {
+            TagLib::FileRef inTagRef(sourcePath.string().c_str());
+            TagLib::FileRef outTagRef(outputFile.string().c_str());
+
+            if (!inTagRef.isNull() && inTagRef.file() && !outTagRef.isNull() && outTagRef.file()) {
+                TagLib::PropertyMap outputProperties = outTagRef.file()->properties();
+                const TagLib::PropertyMap inputProperties = inTagRef.file()->properties();
+
+                for (const auto &[key, values] : inputProperties) {
+                    outputProperties[key] = values;
+                }
+
+                outTagRef.file()->setProperties(outputProperties);
+                if (!outTagRef.file()->save()) {
+                    warn("Converted file was written, but metadata could not be saved.");
+                }
+            } else {
+                warn("Converted file was written, but metadata could not be copied.");
+            }
+        }
+
         if (bitfake::coverart::InputHasAttachedCover(sourcePath)) {
             if (!bitfake::coverart::FormatSupportsAttachedCover(format)) {
                 warn("Input has cover art, but selected output format does not support attached cover art copy yet.");
@@ -1291,40 +1328,11 @@ bool ConvertToFileType(const fs::path &inputPath, const fs::path &outputPath, bi
             }
         }
 
-        TagLib::FileRef inTagRef(sourcePath.string().c_str());
-        TagLib::FileRef outTagRef(outputFile.string().c_str());
-        TagLib::PropertyMap inProperties = inTagRef.file()->properties();
-        if (!inTagRef.isNull() && inTagRef.tag() && !outTagRef.isNull() && outTagRef.tag()) {
-
-            // using local function saves on I/O by staging all changes in memory and writing them all at once when
-            // CommitMetaDataChanges is called, instead of writing each change separately as it's made.
-            bitfake::tagging::StageMetaDataChanges(inProperties, "Title", outTagRef.tag()->title().to8Bit(true));
-            bitfake::tagging::StageMetaDataChanges(inProperties, "Artist", outTagRef.tag()->artist().to8Bit(true));
-            bitfake::tagging::StageMetaDataChanges(inProperties, "Album", outTagRef.tag()->album().to8Bit(true));   
-            bitfake::tagging::StageMetaDataChanges(inProperties, "Comment", outTagRef.tag()->comment().to8Bit(true));
-            bitfake::tagging::StageMetaDataChanges(inProperties, "Genre", outTagRef.tag()->genre().to8Bit(true));
-            bitfake::tagging::StageMetaDataChanges(inProperties, "Year", std::to_string(outTagRef.tag()->year()));
-            bitfake::tagging::StageMetaDataChanges(inProperties, "Track", std::to_string(outTagRef.tag()->track()));
-
-            if (inTagRef.file() && outTagRef.file()) {
-                TagLib::PropertyMap outputProperties = outTagRef.file()->properties();
-                const TagLib::PropertyMap inputProperties = inTagRef.file()->properties();
-                for (const auto &[key, values] : inputProperties) {
-                    outputProperties[key] = values;
-                }
-                outTagRef.file()->setProperties(outputProperties);
-            }
-
-            if (!outTagRef.file()->save()) {
-                warn("Converted file was written, but metadata could not be saved.");
-            }
-
-            bitfake::tagging::CommitMetaDataChanges(outputFile, inProperties);
+        if (!batchMode) {
+            yay("Conversion completed successfully!");
+            plog("Output file:");
+            yay(bitfake::pathutils::pathToString(outputFile).c_str());
         }
-
-        yay("Conversion completed successfully!");
-        plog("Output file:");
-        yay(bitfake::pathutils::pathToString(outputFile).c_str());
         return true;
     };
 
@@ -1348,50 +1356,109 @@ bool ConvertToFileType(const fs::path &inputPath, const fs::path &outputPath, bi
             }
         }
 
-        std::size_t convertedCount = 0;
-        std::size_t failedCount = 0;
+        struct ConvertJob {
+            fs::path inputPath;
+            fs::path outputPath;
+        };
+
+        std::vector<ConvertJob> jobs;
         std::size_t skippedCount = 0;
+        std::unordered_map<std::string, std::size_t> plannedOutputs;
+        const std::string outputExtension = bitfake::coverart::OutputExtensionForFormat(format);
 
         const fs::path normalizedInputRoot = normalizedPath(inputPath);
         const fs::path normalizedOutputRoot = normalizedPath(outputPath);
         const bool outputInsideInput = pathStartsWith(normalizedOutputRoot, normalizedInputRoot);
 
-        for (fs::recursive_directory_iterator it(inputPath, fs::directory_options::skip_permission_denied), end;
-             it != end; ++it) {
-            const fs::path currentPath = it->path();
-
-            if (outputInsideInput && pathStartsWith(currentPath, outputPath)) {
-                it.disable_recursion_pending();
-                continue;
-            }
-
-            if (!it->is_regular_file()) {
-                continue;
-            }
-
+        auto planJob = [&](const fs::path &currentPath, const fs::path &relativePath) {
             if (!fc::IsValidAudioFile(currentPath)) {
                 ++skippedCount;
-                continue;
-            }
-
-            std::error_code relativeError;
-            fs::path relativePath = fs::relative(currentPath, inputPath, relativeError);
-            if (relativeError || relativePath.empty()) {
-                relativePath = currentPath.filename();
+                return;
             }
 
             fs::path outputFile = outputPath / relativePath;
-            outputFile.replace_extension(bitfake::coverart::OutputExtensionForFormat(format));
+            outputFile.replace_extension(outputExtension);
 
-            if (!convertSingleFile(currentPath, outputFile)) {
-                ++failedCount;
-                continue;
+            const std::string outputKey = fs::absolute(outputFile).lexically_normal().string();
+            if (++plannedOutputs[outputKey] > 1) {
+                warn(("Skipping duplicate output target: " + outputFile.string()).c_str());
+                ++skippedCount;
+                return;
             }
-            ++convertedCount;
+
+            jobs.push_back({currentPath, outputFile});
+        };
+
+        if (gb::recursive) {
+            for (fs::recursive_directory_iterator it(inputPath, fs::directory_options::skip_permission_denied), end;
+                 it != end; ++it) {
+                const fs::path currentPath = it->path();
+
+                if (outputInsideInput && pathStartsWith(currentPath, outputPath)) {
+                    it.disable_recursion_pending();
+                    continue;
+                }
+
+                if (!it->is_regular_file()) {
+                    continue;
+                }
+
+                std::error_code relativeError;
+                fs::path relativePath = fs::relative(currentPath, inputPath, relativeError);
+                if (relativeError || relativePath.empty()) {
+                    relativePath = currentPath.filename();
+                }
+
+                planJob(currentPath, relativePath);
+            }
+        } else {
+            for (fs::directory_iterator it(inputPath, fs::directory_options::skip_permission_denied), end; it != end;
+                 ++it) {
+                if (!it->is_regular_file()) {
+                    continue;
+                }
+
+                planJob(it->path(), it->path().filename());
+            }
         }
 
-        if (convertedCount == 0) {
-            if (failedCount > 0) {
+        if (jobs.empty()) {
+            warn("No valid audio files found in input directory for conversion.");
+            return false;
+        }
+
+        const std::size_t workerCount = bitfake::parallel::ComputeWorkerCount(jobs.size(), gb::Parallel, gb::threads);
+        if (workerCount > 1) {
+            plog(("Converting " + std::to_string(jobs.size()) + " file(s) with " + std::to_string(workerCount) +
+                  " thread(s)...")
+                     .c_str());
+        }
+
+        std::atomic<std::size_t> convertedCount{0};
+        std::atomic<std::size_t> failedCount{0};
+
+        bitfake::parallel::ParallelFor(jobs.size(), workerCount, [&](std::size_t index) {
+            const ConvertJob &job = jobs[index];
+            try {
+                if (convertSingleFile(job.inputPath, job.outputPath, true)) {
+                    ++convertedCount;
+                } else {
+                    ++failedCount;
+                }
+            } catch (const std::exception &e) {
+                err(("Conversion failed for " + job.inputPath.string() + ": " + e.what()).c_str());
+                ++failedCount;
+            } catch (...) {
+                err(("Conversion failed for " + job.inputPath.string() + ": unknown exception").c_str());
+                ++failedCount;
+            }
+        });
+
+        const std::size_t convertedTotal = convertedCount.load();
+        const std::size_t failedTotal = failedCount.load();
+
+        if (convertedTotal == 0) {
+            if (failedTotal > 0) {
                 err("No files were converted successfully.");
             } else {
                 warn("No valid audio files found in input directory for conversion.");
@@ -1399,151 +1466,18 @@ bool ConvertToFileType(const fs::path &inputPath, const fs::path &outputPath, bi
             return false;
         }
 
-        yay(("Directory conversion completed. Converted " + std::to_string(convertedCount) + " file(s).").c_str());
+        yay(("Directory conversion completed. Converted " + std::to_string(convertedTotal) + " file(s).").c_str());
         if (skippedCount > 0) {
-            warn(("Skipped " + std::to_string(skippedCount) + " non-audio file(s).").c_str());
+            warn(("Skipped " + std::to_string(skippedCount) + " file(s).").c_str());
         }
-        if (failedCount > 0) {
-            warn(("Failed to convert " + std::to_string(failedCount) + " file(s).").c_str());
+        if (failedTotal > 0) {
+            warn(("Failed to convert " + std::to_string(failedTotal) + " file(s).").c_str());
         }
         return true;
     }
 
     return convertSingleFile(inputPath, outputPath);
 }
-bool ParallelConvertToFileType(const std::vector<fs::path> &inputPaths, const fs::path &outputDir, type::AudioFormat format,
-                           type::VBRQualities quality)
-    {
-        if (inputPaths.empty()) {
-            warn("No input files provided for parallel conversion.");
-            return false;
-        }
-
-        if (outputDir.empty()) {
-            err("Output directory is empty.");
-            return false;
-        }
-
-        std::error_code ec;
-        if (fs::exists(outputDir, ec)) {
-            if (ec) {
-                err(("Failed to inspect output directory: " + outputDir.string() + " (" + ec.message() + ")").c_str());
-                return false;
-            }
-            if (!fs::is_directory(outputDir, ec) || ec) {
-                err("Output path exists and is not a directory.");
-                return false;
-            }
-        } else {
-            fs::create_directories(outputDir, ec);
-            if (ec) {
-                err(("Failed to create output directory: " + outputDir.string() + " (" + ec.message() + ")").c_str());
-                return false;
-            }
-        }
-
-        struct ConvertJob {
-            fs::path inputPath;
-            fs::path outputPath;
-        };
-
-        std::vector<ConvertJob> jobs;
-        jobs.reserve(inputPaths.size());
-
-        std::size_t skippedCount = 0;
-        std::unordered_map<std::string, std::size_t> plannedOutputs;
-        const std::string outputExtension = bitfake::coverart::OutputExtensionForFormat(format);
-
-        for (const fs::path &inputPath : inputPaths) {
-            if (!fs::exists(inputPath)) {
-                warn(("Skipping missing input path: " + inputPath.string()).c_str());
-                ++skippedCount;
-                continue;
-            }
-
-            if (!fs::is_regular_file(inputPath)) {
-                warn(("Skipping non-regular input path: " + inputPath.string()).c_str());
-                ++skippedCount;
-                continue;
-            }
-
-            if (!fc::IsValidAudioFile(inputPath)) {
-                warn(("Skipping non-audio input file: " + inputPath.string()).c_str());
-                ++skippedCount;
-                continue;
-            }
-
-            fs::path outputPath = outputDir / (inputPath.stem().string() + outputExtension);
-            std::string outputKey = fs::absolute(outputPath).lexically_normal().string();
-            if (++plannedOutputs[outputKey] > 1) {
-                warn(("Skipping duplicate output target from parallel job list: " + outputPath.string()).c_str());
-                ++skippedCount;
-                continue;
-            }
-
-            jobs.push_back({inputPath, outputPath});
-        }
-
-        if (jobs.empty()) {
-            warn("No valid audio files available for parallel conversion.");
-            return false;
-        }
-
-        std::atomic<std::size_t> nextIndex{0};
-        std::atomic<std::size_t> convertedCount{0};
-        std::atomic<std::size_t> failedCount{0};
-
-        const unsigned int hardwareThreads = std::thread::hardware_concurrency();
-        const std::size_t detectedThreads =
-            hardwareThreads > 0 ? static_cast<std::size_t>(hardwareThreads) : static_cast<std::size_t>(1);
-        const std::size_t desiredWorkers = std::max<std::size_t>(1, detectedThreads / 2);
-        const std::size_t workerCount = std::min<std::size_t>(jobs.size(), desiredWorkers);
-
-        std::vector<std::future<void>> workers;
-        workers.reserve(workerCount);
-
-        for (std::size_t worker = 0; worker < workerCount; ++worker) {
-            workers.push_back(std::async(std::launch::async, [&]() {
-                while (true) {
-                    const std::size_t index = nextIndex.fetch_add(1);
-                    if (index >= jobs.size()) {
-                        break;
-                    }
-
-                    const ConvertJob &job = jobs[index];
-                    try {
-                        if (ConvertToFileType(job.inputPath, job.outputPath, format, quality)) {
-                            ++convertedCount;
-                        } else {
-                            ++failedCount;
-                        }
-                    } catch (const std::exception &e) {
-                        err(("Parallel conversion failed for " + job.inputPath.string() + ": " + e.what()).c_str());
-                        ++failedCount;
-                    } catch (...) {
-                        err(("Parallel conversion failed for " + job.inputPath.string() + ": unknown exception").c_str());
-                        ++failedCount;
-                    }
-                }
-            }));
-        }
-
-        for (auto &worker : workers) {
-            worker.get();
-        }
-
-        yay(("Parallel directory conversion completed. Converted " + std::to_string(convertedCount.load()) +
-             " file(s).")
-                .c_str());
-        if (skippedCount > 0) {
-            warn(("Skipped " + std::to_string(skippedCount) + " file(s).").c_str());
-        }
-        if (failedCount.load() > 0) {
-            warn(("Failed to convert " + std::to_string(failedCount.load()) + " file(s).").c_str());
-        }
-
-        return convertedCount.load() > 0;
-    }
 } // namespace bitfake::nonuser
 
 namespace bitfake::replaygain {
@@ -1690,8 +1624,30 @@ void CalculateReplayGainAlbum(const fs::path &path) {
 
     // 1) Group valid audio files by album tag.
     std::unordered_map<std::string, std::vector<fs::path>> albumMap;
-    for (const auto &entry : fs::directory_iterator(path)) {
-        if (fc::IsValidAudioFile(entry.path())) {
+    if (gb::recursive) {
+        for (const auto &entry : fs::recursive_directory_iterator(path, fs::directory_options::skip_permission_denied)) {
+            if (!entry.is_regular_file()) {
+                continue;
+            }
+            if (!fc::IsValidAudioFile(entry.path())) {
+                continue;
+            }
+
+            TagLib::FileRef f(entry.path().c_str());
+            if (!f.isNull() && f.tag()) {
+                std::string album = f.tag()->album().to8Bit(true);
+                albumMap[album].push_back(entry.path());
+            }
+        }
+    } else {
+        for (const auto &entry : fs::directory_iterator(path, fs::directory_options::skip_permission_denied)) {
+            if (!entry.is_regular_file()) {
+                continue;
+            }
+            if (!fc::IsValidAudioFile(entry.path())) {
+                continue;
+            }
+
             TagLib::FileRef f(entry.path().c_str());
             if (!f.isNull() && f.tag()) {
                 std::string album = f.tag()->album().to8Bit(true);
@@ -1720,30 +1676,13 @@ void CalculateReplayGainAlbum(const fs::path &path) {
         return;
     }
 
-    const unsigned int hardwareThreads = std::thread::hardware_concurrency();
-    const std::size_t desiredWorkers = std::max<std::size_t>(1, static_cast<std::size_t>(hardwareThreads / 2));
-    const std::size_t workerCount = std::min<std::size_t>(desiredWorkers, allTracks.size());
     std::vector<bitfake::type::ReplayGainByTrack> trackResults(allTracks.size(),
                                                                bitfake::type::ReplayGainByTrack{0.0f, 0.0f});
-    std::atomic<std::size_t> nextIndex{0};
-    std::vector<std::future<void>> workers;
-    workers.reserve(workerCount);
-
-    for (std::size_t worker = 0; worker < workerCount; ++worker) {
-        workers.push_back(std::async(std::launch::async, [&]() {
-            while (true) {
-                const std::size_t index = nextIndex.fetch_add(1);
-                if (index >= allTracks.size()) {
-                    break;
-                }
-                trackResults[index] = CalculateReplayGainTrack(allTracks[index]);
-            }
-        }));
-    }
-
-    for (auto &worker : workers) {
-        worker.get();
-    }
+    const std::size_t workerCount =
+        bitfake::parallel::ComputeWorkerCount(allTracks.size(), gb::Parallel, gb::threads);
+    bitfake::parallel::ParallelFor(allTracks.size(), workerCount, [&](std::size_t index) {
+        trackResults[index] = CalculateReplayGainTrack(allTracks[index]);
+    });
 
     std::unordered_map<std::string, bitfake::type::ReplayGainByTrack> trackReplayGainByPath;
     trackReplayGainByPath.reserve(allTracks.size());

@@ -13,6 +13,7 @@ namespace fc = FileChecks;
 #include "Utilities/operations.hpp"
 #include "Utilities/globals.hpp"
 #include "Utilities/pathutils.hpp"
+#include "Utilities/parallel.hpp"
 namespace gb = globals;
 #include <taglib/fileref.h>
 #include <taglib/tpropertymap.h>
@@ -39,12 +40,17 @@ int main(int argc, char *argv[]) {
         switch (argv[i][0]) {
         case '-':
             if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
-                printf("Usage: ./bitfake2 [options]\n\n");
+                printf("Usage: ./bitf [options]\n\n");
                 printf("Options:\n");
                 printf("  -h,    --help                            Show this help message\n");
                 printf("  -i,    --input <path>                    Input audio file or directory path\n");
                 printf("  -o,    --output <file>                   Output file path (must be .txt)\n");
                 printf("  -po,   --pathout <directory>             Output directory path for conversion functions\n");
+                printf("  -r,    --recursive                       Recurse into subdirectories (for directory-based commands)\n");
+                printf("  -T,    --threads <n>                     Max worker threads (default: auto)\n");
+                printf("         --serial                          Disable parallel execution (debug/slow disks)\n");
+                printf("         --no-parallel                     Alias for --serial\n");
+                printf("  -p,    --parallel                        (Deprecated) Parallel is now the default\n");
                 printf(
                     "  -t,    --tag <tag:val>                   Tag to apply to input file (e.g. -t title:NewTitle)\n");
                 printf("  -f,    --format <fmt[:q]>                Conversion type (e.g. mp3:V0, flac:L8, opus:160)\n");
@@ -52,7 +58,7 @@ int main(int argc, char *argv[]) {
                 printf("  -grg,  --getreplaygain                   Get ReplayGain information of input file\n");
                 printf("  -sa,   --spectralanalysis                Perform spectral analysis on input file\n");
                 printf("  -atrg, --applytrackreplaygain            Calculate track replaygain and apply to file(s)\n");
-                printf("  -arg,  --applyalbumreplaygain            Calculate album replaygain and apply to file(s)\n");
+                printf("  -aag,  -arg, --applyalbumreplaygain      Calculate album replaygain and apply to file(s)\n");
                 printf("  -oia,  --organizeintoalbums              Organize audio files into album subdirectories\n");
                 printf("  -oiaa, --organizeintoartistalbum         Organize audio files into artist/album "
                        "subdirectories\n");
@@ -60,8 +66,8 @@ int main(int argc, char *argv[]) {
                        "subdirectories\n");
                 printf("  -raf,  --renamealbumfolders              Rename album subfolders to Artist - Album (Year)\n");
                 printf("  -rfft, --renamefilesfromtags             Rename files from tags (e.g. Artist - Title)\n");
-                printf("  -cvrt, --convertto <fmt[:q]>             Convert input file(s) to specified format\n");
-                printf("  -sg,   --spectrogram <output.png>        Generate spectrogram image from input audio file\n");
+                printf("  -cvrt, --convert, --convertto            Convert input file(s) to specified format\n");
+                printf("  -sg,   --spectrogram                     Generate spectrogram image (writes to -po directory)\n");
                 printf(
                     "  -mb,   --musicbrainz                     Fetch metadata from MusicBrainz and write to file\n");
                 printf("  -mbnc, --musicbrainz-no-confirm          Bypass confirmation and write MusicBrainz metadata immediately\n");
@@ -96,12 +102,20 @@ int main(int argc, char *argv[]) {
 
             if (strcmp(argv[i], "--format") == 0 || strcmp(argv[i], "-f") == 0) {
                 if (i + 1 < argc) {
-                    std::string formatStr = argv[i + 1];
-                    size_t colonPos = formatStr.find(':');
+                    const std::string input = argv[i + 1];
+                    const size_t colonPos = input.find(':');
+                    const std::string formatStr = input.substr(0, colonPos);
+                    const std::string qualityStr =
+                        (colonPos != std::string::npos) ? input.substr(colonPos + 1) : std::string();
+
+                    gb::outputFormat = bitfake::nonuser::StringToAudioFormat(formatStr);
+
                     if (colonPos != std::string::npos) {
-                        std::string qualityStr = formatStr.substr(colonPos + 1);
-                        formatStr = formatStr.substr(0, colonPos);
-                        gb::outputFormat = bitfake::nonuser::StringToAudioFormat(formatStr);
+                        if (qualityStr.empty()) {
+                            err("Format quality specifier cannot be empty (e.g. mp3:V2, ogg:Q6, flac:L8, opus:160).");
+                            return EXIT_FAILURE;
+                        }
+
                         if (gb::outputFormat == bitfake::type::AudioFormat::OPUS) {
                             try {
                                 int bitrateKbps = std::stoi(qualityStr);
@@ -115,11 +129,28 @@ int main(int argc, char *argv[]) {
                                 err("Invalid Opus bitrate. Use an integer between 0 and 512 (e.g. opus:160).");
                                 return EXIT_FAILURE;
                             }
-                        } else {
+                        } else if (gb::outputFormat == bitfake::type::AudioFormat::MP3 ||
+                                   gb::outputFormat == bitfake::type::AudioFormat::OGG ||
+                                   gb::outputFormat == bitfake::type::AudioFormat::FLAC) {
+                            const char prefix = qualityStr[0];
+                            if (gb::outputFormat == bitfake::type::AudioFormat::MP3 && !(prefix == 'V' || prefix == 'v')) {
+                                err("MP3 quality must be specified as V0..V9 (e.g. mp3:V2). Do not use Qx/Lx for MP3.");
+                                return EXIT_FAILURE;
+                            }
+                            if (gb::outputFormat == bitfake::type::AudioFormat::OGG && !(prefix == 'Q' || prefix == 'q')) {
+                                err("OGG VORBIS quality must be specified as Q0/Q3/Q6/Q9/Q10 (e.g. ogg:Q6). Do not use Vx/Lx for OGG.");
+                                return EXIT_FAILURE;
+                            }
+                            if (gb::outputFormat == bitfake::type::AudioFormat::FLAC && !(prefix == 'L' || prefix == 'l')) {
+                                err("FLAC level must be specified as L0..L8 (e.g. flac:L8). Do not use Vx/Qx for FLAC.");
+                                return EXIT_FAILURE;
+                            }
                             gb::VBRQuality = bitfake::nonuser::StringToVBRQuality(qualityStr);
+                        } else {
+                            err("This output format does not support a :quality specifier (only mp3/ogg/flac, or opus bitrate).");
+                            return EXIT_FAILURE;
                         }
                     } else {
-                        gb::outputFormat = bitfake::nonuser::StringToAudioFormat(formatStr);
                         if (gb::outputFormat == bitfake::type::AudioFormat::OPUS) {
                             gb::opusBitrateKbps = 192;
                         }
@@ -167,9 +198,39 @@ int main(int argc, char *argv[]) {
                 }
             }
 
+            if (strcmp(argv[i], "--recursive") == 0 || strcmp(argv[i], "-r") == 0) {
+                plog("Recursive directory scanning enabled.");
+                gb::recursive = true;
+            }
+
+            if (strcmp(argv[i], "--threads") == 0 || strcmp(argv[i], "-T") == 0) {
+                if (i + 1 < argc) {
+                    try {
+                        long requested = std::stol(argv[i + 1]);
+                        if (requested < 0 || requested > 1024) {
+                            err("--threads must be between 0 and 1024.");
+                            return EXIT_FAILURE;
+                        }
+                        gb::threads = static_cast<std::size_t>(requested);
+                    } catch (...) {
+                        err("Invalid --threads value. Use an integer (e.g. --threads 4).");
+                        return EXIT_FAILURE;
+                    }
+                    i++; // Skip the next argument since it's the threads value
+                } else {
+                    err("--threads flag provided but no value specified!");
+                    return EXIT_FAILURE;
+                }
+            }
+
+            if (strcmp(argv[i], "--serial") == 0 || strcmp(argv[i], "--no-parallel") == 0) {
+                plog("Parallel execution disabled (--serial).");
+                gb::Parallel = false;
+            }
+
             if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
                 printf("Bitfake Version %s\n", gb::version.c_str());
-                printf("By Ray17x on Github <ray@atl.tools> (alias: koyomi / kero on various platforms)\n");
+                printf("By Ray17x on Github <ray17x@disroot.org> (alias: koyomi / kero on various platforms)\n");
                 printf("This software is provided as-is, without any express or implied warranty.\n In no event will "
                        "the authors be "
                        "held liable for any damages arising from the use of this software.\n");
@@ -177,7 +238,7 @@ int main(int argc, char *argv[]) {
             }
 
             if (strcmp(argv[i], "--parallel") == 0 || strcmp(argv[i], "-p") == 0) {
-                plog("Parallel conversion enabled for supported functions.");
+                warn("Parallel execution is enabled by default; -p/--parallel is deprecated.");
                 gb::Parallel = true;
             }
 
@@ -192,41 +253,12 @@ int main(int argc, char *argv[]) {
                 gb::musicbrainzConfirm = true;
             }
 
-            // if (strcmp(argv[i], "--recursive") == 0 || strcmp(argv[i], "-r") == 0); <- future thing
-
             // This first pass is only for grabbing input and output files, so we can apply it to other commands later!
             break;
         }
     }
 
-    // static_cast<int>(gb::outputFormat), static_cast<int>(gb::VBRQuality)
-    int fmt = static_cast<int>(gb::outputFormat);
-    int q = static_cast<int>(gb::VBRQuality);
-
-    // To the brave souls reading this code:
-    // if (fmt == 0 && (q < 0 || q > 9)) { /* MP3: V0..V9 */ }
-    // if (fmt == 1 && (q < 10 || q > 14)) { /* OGG: Q0..Q10 */ }
-    // if (fmt == 4 && (q < 15 || q > 23)) { /* FLAC: L0..L8 */ }
-
-    if (fmt == 0 && (q < 0 || q > 9)) {
-        err("MP3 format requires a VBR quality between V0 and V9 (inclusive)! (Do not use Qx or Lx for MP3! :( )");
-        printf("format=%d quality=%d\n", static_cast<int>(gb::outputFormat), static_cast<int>(gb::VBRQuality));
-        return EXIT_FAILURE;
-    }
-
-    if (fmt == 1 && (q < 0 || q > 10)) {
-        err("OGG VORBIS format requires a VBR quality between Q0 and Q10 (inclusive)! (Do not use Vx or Lx for OGG! :( "
-            ")");
-        printf("format=%d quality=%d\n", static_cast<int>(gb::outputFormat), static_cast<int>(gb::VBRQuality));
-        return EXIT_FAILURE;
-    }
-
-    if (fmt == 4 && (q < 0 || q > 8)) {
-        err("FLAC format requires an encoding level between L0 and L8 (inclusive)! (Do not use Vx or Qx for FLAC! :( "
-            ")");
-        printf("format=%d quality=%d\n", static_cast<int>(gb::outputFormat), static_cast<int>(gb::VBRQuality));
-        return EXIT_FAILURE;
-    }
+    // Format/quality compatibility is validated during --format parsing.
 
     // File checks before handing it off to the 2nd pass
     // negate pathout checks since it can be used for other functions that don't require an output file
@@ -378,61 +410,37 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        if (strcmp(argv[j], "-cvrt") == 0 || strcmp(argv[j], "--convert") == 0) {
-            // converting stuff now..
-            if (!fs::exists(gb::conversionOutputDirectory)) {
-                err("Oh no! Did you provide an output **directory** via -po? :(");
+        if (strcmp(argv[j], "-cvrt") == 0 || strcmp(argv[j], "--convert") == 0 ||
+            strcmp(argv[j], "--convertto") == 0) {
+            if (gb::conversionOutputDirectory.empty()) {
+                err("No conversion output directory provided. Use -po/--pathout <dir>.");
                 return EXIT_FAILURE;
             }
 
-            if (fs::is_directory(gb::inputFile)) {
-                yay("trying to convert directory >:P...");
-                fs::directory_iterator dirIter(gb::inputFile);
-                std::vector<fs::path> inputAudioFiles;
-
-                for (const auto &entry : dirIter) {
-                    if (!entry.is_regular_file()) {
-
-                        warn((std::string("Skipping non-regular file: ") + entry.path().string()).c_str());
-                        continue;
-                    }
-                    if (!fc::IsValidAudioFile(entry.path())) {
-                        warn((std::string("Skipping non-audio file: ") + entry.path().string()).c_str());
-                        continue;
-                    }
-
-                    inputAudioFiles.push_back(entry.path());
-                }
-
-                if (inputAudioFiles.empty()) {
-                    warn("No valid audio files found in input directory for conversion.");
-                    continue;
-                }
-
-                try {
-                    if (gb::Parallel) {
-                        bitfake::nonuser::ParallelConvertToFileType(inputAudioFiles, gb::conversionOutputDirectory,
-                                                                     gb::outputFormat, gb::VBRQuality);
-                    } else {
-                        for (const auto &inputPath : inputAudioFiles) {
-                            bitfake::nonuser::ConvertToFileType(inputPath, gb::conversionOutputDirectory,
-                                                                gb::outputFormat, gb::VBRQuality);
-                        }
-                    }
-                } catch (const std::exception &e) {
-                    err((std::string("Failed to convert directory: ") + gb::inputFile.string() + " Error: " +
-                         e.what())
+            std::error_code ec;
+            if (!fs::exists(gb::conversionOutputDirectory, ec)) {
+                fs::create_directories(gb::conversionOutputDirectory, ec);
+                if (ec) {
+                    err(("Failed to create output directory: " + gb::conversionOutputDirectory.string() + " (" +
+                         ec.message() + ")")
                             .c_str());
+                    return EXIT_FAILURE;
                 }
-            } else {
-                yay("Trying to convert single file >:P...");
-                try {
-                    bitfake::nonuser::ConvertToFileType(gb::inputFile, gb::conversionOutputDirectory, gb::outputFormat,
-                                                        gb::VBRQuality);
-                } catch (const std::exception &e) {
-                    err((std::string("Failed to convert file: ") + gb::inputFile.string() + " Error: " + e.what())
-                            .c_str());
+            }
+            if (!fs::is_directory(gb::conversionOutputDirectory, ec) || ec) {
+                err("Output path exists and is not a directory.");
+                return EXIT_FAILURE;
+            }
+
+            try {
+                if (!bitfake::nonuser::ConvertToFileType(gb::inputFile, gb::conversionOutputDirectory, gb::outputFormat,
+                                                        gb::VBRQuality)) {
+                    err("Conversion failed.");
+                    return EXIT_FAILURE;
                 }
+            } catch (const std::exception &e) {
+                err((std::string("Conversion failed: ") + e.what()).c_str());
+                return EXIT_FAILURE;
             }
         }
 
@@ -459,44 +467,41 @@ int main(int argc, char *argv[]) {
         if (strcmp(argv[j], "-atrg") == 0 || strcmp(argv[j], "--applytrackreplaygain") == 0) {
             if (fs::is_directory(gb::inputFile)) {
                 std::vector<fs::path> tracks;
-                for (const auto &entry : fs::directory_iterator(gb::inputFile)) {
-                    if (!entry.is_regular_file()) {
-                        continue;
+                if (gb::recursive) {
+                    for (const auto &entry :
+                         fs::recursive_directory_iterator(gb::inputFile, fs::directory_options::skip_permission_denied)) {
+                        if (!entry.is_regular_file()) {
+                            continue;
+                        }
+                        if (!fc::IsValidAudioFile(entry.path())) {
+                            continue;
+                        }
+                        tracks.push_back(entry.path());
                     }
-                    if (!fc::IsValidAudioFile(entry.path())) {
-                        continue;
+                } else {
+                    for (const auto &entry :
+                         fs::directory_iterator(gb::inputFile, fs::directory_options::skip_permission_denied)) {
+                        if (!entry.is_regular_file()) {
+                            continue;
+                        }
+                        if (!fc::IsValidAudioFile(entry.path())) {
+                            continue;
+                        }
+                        tracks.push_back(entry.path());
                     }
-                    tracks.push_back(entry.path());
                 }
 
                 if (tracks.empty()) {
                     warn("No valid audio files found in directory for track replaygain application.");
                 } else {
-                    const unsigned int hardwareThreads = std::thread::hardware_concurrency();
-                    const std::size_t desiredWorkers =
-                        std::max<std::size_t>(1, static_cast<std::size_t>(hardwareThreads / 2));
-                    const std::size_t workerCount = std::min<std::size_t>(desiredWorkers, tracks.size());
                     std::vector<bitfake::type::ReplayGainByTrack> trackResults(
                         tracks.size(), bitfake::type::ReplayGainByTrack{0.0f, 0.0f});
-                    std::atomic<std::size_t> nextIndex{0};
-                    std::vector<std::future<void>> workers;
-                    workers.reserve(workerCount);
 
-                    for (std::size_t worker = 0; worker < workerCount; ++worker) {
-                        workers.push_back(std::async(std::launch::async, [&]() {
-                            while (true) {
-                                const std::size_t index = nextIndex.fetch_add(1);
-                                if (index >= tracks.size()) {
-                                    break;
-                                }
-                                trackResults[index] = bitfake::replaygain::CalculateReplayGainTrack(tracks[index]);
-                            }
-                        }));
-                    }
-
-                    for (auto &worker : workers) {
-                        worker.get();
-                    }
+                    const std::size_t workerCount =
+                        bitfake::parallel::ComputeWorkerCount(tracks.size(), gb::Parallel, gb::threads);
+                    bitfake::parallel::ParallelFor(tracks.size(), workerCount, [&](std::size_t index) {
+                        trackResults[index] = bitfake::replaygain::CalculateReplayGainTrack(tracks[index]);
+                    });
 
                     bitfake::type::ReplayGainByAlbum
                         albumGainInfo; // leave empty since we only want to apply track gain info
@@ -517,7 +522,8 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        if (strcmp(argv[j], "-aag") == 0 || strcmp(argv[j], "--applyalbumgain") == 0) {
+        if (strcmp(argv[j], "-aag") == 0 || strcmp(argv[j], "-arg") == 0 ||
+            strcmp(argv[j], "--applyalbumgain") == 0 || strcmp(argv[j], "--applyalbumreplaygain") == 0) {
             bitfake::replaygain::CalculateReplayGainAlbum(gb::inputFile);
             yay("Album ReplayGain applied successfully!");
         }

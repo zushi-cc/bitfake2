@@ -194,8 +194,6 @@ type::AudioFormat StringToAudioFormat(const std::string &str);
 type::VBRQualities StringToVBRQuality(const std::string &str);
 bool ConvertToFileType(const fs::path &inputPath, const fs::path &outputPath, type::AudioFormat format,
                        type::VBRQualities quality);
-bool ParallelConvertToFileType(const std::vector<fs::path> &inputPaths, const fs::path &outputDir, type::AudioFormat format,
-                           type::VBRQualities quality);
 } // namespace nonuser
 
 namespace tagging {

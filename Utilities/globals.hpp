@@ -1,6 +1,7 @@
 #ifndef GLOBALS_HPP
 #define GLOBALS_HPP
 
+#include <cstddef>
 #include <filesystem>
 #include <string>
 #include "operations.hpp"
@@ -18,6 +19,8 @@ extern std::string version;
 extern fs::path conversionOutputDirectory; // For storing converted files if -po/--pathout is specified
 extern std::string tag, val;
 extern bool Parallel;
+extern std::size_t threads;
+extern bool recursive;
 extern bool musicbrainzConfirm;
 } // namespace globals
 #endif

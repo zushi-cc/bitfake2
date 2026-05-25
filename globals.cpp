@@ -10,6 +10,8 @@ bool outputToTerminal = true;
 std::string version = "2.0";
 fs::path conversionOutputDirectory;
 std::string tag, val;
-bool Parallel = false;
+bool Parallel = true;
+std::size_t threads = 0;
+bool recursive = false;
 bool musicbrainzConfirm = true;
 } // namespace globals

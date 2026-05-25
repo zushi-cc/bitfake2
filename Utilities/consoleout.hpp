@@ -3,6 +3,7 @@
 
 #include <cstdlib>
 #include <stdio.h>
+#include <mutex>
 
 namespace ConsoleOut {
 static constexpr const char *RED = "\033[31m";
@@ -13,7 +14,10 @@ static constexpr const char *MAGENTA = "\033[35m";
 static constexpr const char *CYAN = "\033[36m";
 static constexpr const char *RESET = "\033[0m";
 
+inline std::mutex ConsoleMutex;
+
 inline void err(const char *msg = "") {
+    std::lock_guard<std::mutex> lock(ConsoleMutex);
     if (msg[0] != '\0') {
         printf("%s[ERR]\t%s%s\n", RED, RESET, msg);
         fflush(stdout); // Ensure the error message is printed immediately on Windows
@@ -23,6 +27,7 @@ inline void err(const char *msg = "") {
     }
 }
 inline void warn(const char *msg) {
+    std::lock_guard<std::mutex> lock(ConsoleMutex);
     if (msg[0] != '\0') {
         printf("%s[WRN]\t%s%s\n", YELLOW, RESET, msg);
         fflush(stdout);
@@ -30,12 +35,14 @@ inline void warn(const char *msg) {
 }
 inline void plog(const char *msg) // Pretty log :D
 {
+    std::lock_guard<std::mutex> lock(ConsoleMutex);
     if (msg[0] != '\0') {
         printf("%s[LOG]\t%s%s\n", BLUE, RESET, msg);
         fflush(stdout);
     }
 }
 inline void yay(const char *msg) {
+    std::lock_guard<std::mutex> lock(ConsoleMutex);
     if (msg[0] != '\0') {
         printf("%s[YAY]\t%s%s\n", GREEN, RESET, msg);
         fflush(stdout);
