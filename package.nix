@@ -1,6 +1,7 @@
 {
   lib,
   stdenv,
+  pkg-config,
   taglib,
   fftw,
   libebur128,
@@ -11,9 +12,13 @@
 
 stdenv.mkDerivation {
   pname = "bitfake2";
-  version = "0.2.0";
+  version = "2.0";
 
   src = lib.cleanSource ./.;
+
+  nativeBuildInputs = [
+    pkg-config
+  ];
 
   buildInputs = [
     taglib

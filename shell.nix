@@ -4,5 +4,9 @@ let
 in
 pkgs.mkShell {
   inputsFrom = [ (pkgs.callPackage ./package.nix { }) ];
-  packages = [ pkgs.clang-tools pkgs.npins ];
+
+  nativeBuildInputs = with pkgs; [
+    clang-tools
+    npins
+  ];
 }
